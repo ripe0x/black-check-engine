@@ -22,6 +22,9 @@ Current as of Phase 4. Contracts are not audited and not deployed.
 | `FwaV2Controller` | src/fwa/FwaV2Controller.sol | Permanent owner of one FWA V2 pool; engine-only; derives survival in O(1) (C010) |
 | `Coin` | src/token/Coin.sol | Fixed-supply ERC20 placeholder with `burnFrom` |
 | `TimelockController` | OpenZeppelin v5.1.0 | Council proposals, 7-day delay, guardian cancel, open execution |
+| `VenueLiquidity`, `VenueHook` | src/venue/ | Coin market on Uniswap v4: whole supply locked single-sided; flat ETH fee to acquisitions (D009) |
+| `Burner` | src/treasury/Burner.sol | Ownerless buy-and-burn of released game surplus (D010) |
+| `FwaFeeBuyer` | src/periphery/FwaFeeBuyer.sol | Buys FWA's pool-creation fee with ETH into the controller |
 | Deployment | script/DeploySystem.sol | The single deployment routine and postflight used by tests and scripts |
 
 ## Lifecycle of a Check
@@ -47,11 +50,12 @@ Current as of Phase 4. Contracts are not audited and not deployed.
 | --- | --- | --- | --- |
 | Draw fees | players | FWA; owner share → controller → engine (`collect`) | FWA formula |
 | ETH buyouts | collectors | `acquisitionBudget` | published price |
-| Coin fees | venue (in progress) | `acquisitionBudget` via `fundAcquisitions` | — |
+| Coin fees | `VenueHook` (flat ETH fee each way) | `acquisitionBudget` via `forward` → `fundAcquisitions` | immutable rate |
 | Standing bid | `acquisitionBudget` | sellers | schedule × `bidBps`, `bidWeeklyCap` per week |
 | Shape restock | game capital (balance − budget) | Shapes contract | only for won Shapes, at recorded backing |
+| Surplus | game capital above budget + `gameReserve` | `Burner` (buys coin on the venue, burns it) | daily release; `maxPerBurn` per interval |
 
-Not built yet: keeper pay, game surplus to coin buy-and-burn, the FWA creation-fee purchase route.
+Not built yet: keeper pay. The FWA creation fee is bought with ETH through `src/periphery/FwaFeeBuyer.sol`.
 
 ## Upgrade and migration
 
