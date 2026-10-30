@@ -6,6 +6,8 @@ import {DeploySystem} from "../../script/DeploySystem.sol";
 import {LaunchConfig} from "../../script/LaunchConfig.sol";
 import {Swapper} from "./Venue.t.sol";
 import {FwaFeeBuyer} from "../../src/periphery/FwaFeeBuyer.sol";
+import {Burner} from "../../src/treasury/Burner.sol";
+import {Engine} from "../../src/core/Engine.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 interface IBal {
@@ -83,6 +85,41 @@ contract DeployTest is ForkBase, DeploySystem {
 
         s.engine.openPool();
         assertEq(s.controller.pool().owner(), address(s.controller));
+    }
+
+    /// Game surplus above the acquisition budget and the reserve is released daily and burned as coin bought on the venue.
+    function test_surplusBuysAndBurnsCoin() public {
+        Config memory c = _config();
+        System memory s = deploySystem(c, address(this), address(this));
+        s.liquidity.launch(161_200);
+        Burner burner = new Burner(c.poolManager, s.liquidity.poolKey(), 0.1 ether, 1 days);
+
+        bytes memory data = abi.encodeCall(Engine.setBurner, (address(burner), uint128(0.5 ether)));
+        vm.prank(c.council);
+        s.timelock.schedule(address(s.engine), 0, data, bytes32(0), bytes32(0), c.delay);
+        vm.warp(vm.getBlockTimestamp() + c.delay);
+        s.timelock.execute(address(s.engine), 0, data, bytes32(0), bytes32(0));
+
+        vm.deal(address(this), 0.3 ether);
+        s.engine.fundAcquisitions{value: 0.3 ether}();
+        vm.deal(address(s.engine), address(s.engine).balance + 1 ether); // game capital (stands in for FWA proceeds)
+
+        assertEq(s.engine.releaseSurplus(), 0.5 ether, "1.3 held - 0.3 budget - 0.5 reserve");
+        assertEq(s.engine.acquisitionBudget(), 0.3 ether);
+        vm.expectRevert(Engine.NotAllowed.selector);
+        s.engine.releaseSurplus(); // once a day
+
+        uint256 supply = s.coin.totalSupply();
+        (uint256 ethIn, uint256 burned) = burner.burn();
+        assertEq(ethIn, 0.1 ether, "one capped chunk");
+        assertGt(burned, 0);
+        assertEq(supply - s.coin.totalSupply(), burned);
+        assertEq(s.coin.balanceOf(address(burner)), 0);
+        vm.expectRevert(Burner.TooSoon.selector);
+        burner.burn();
+        // The venue fee on the burner's buy (1%) went to acquisitions once forwarded.
+        s.hook.forward();
+        assertEq(s.engine.acquisitionBudget(), 0.3 ether + 0.001 ether);
     }
 
     function check(System memory s, Config memory c) external view {

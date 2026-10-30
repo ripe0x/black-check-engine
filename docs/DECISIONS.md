@@ -173,6 +173,23 @@ is, postflight must check the hook's engine, launcher and fee, since the deploye
 Reversibility: immutable once launched; everything before launch is free to change.
 Owner action: Required before finalization.
 
+### D010: Game surplus: daily release above a reserve, burned in capped chunks without an oracle
+Status: REVIEW
+Importance: Medium
+Why it came up: Phase 4. The spec's waterfall ends with buying and burning coin from distributable game surplus, with
+a restricted swap path, slippage limits and a trusted quote. There is no trusted coin price (D006).
+Desired outcome: real surplus becomes burned coin; nobody can drain game capital through the buyback.
+Options considered: (a) `Engine.releaseSurplus` (anyone, daily) sends ETH above `acquisitionBudget + gameReserve` to
+an immutable `Burner`, which anyone can trigger once a day to buy at most `maxPerBurn` ETH of coin and burn it all;
+(b) a TWAP-checked swap (needs an oracle hook); (c) no buyback until an oracle exists.
+Recommended choice: (a). A sandwich can skim part of one capped chunk per day; that is the bounded cost of having
+no oracle. The burner and reserve are timelock-set; the burner has no owner and no exit but the swap.
+Tradeoff: slow burns (0.1 ETH a day in tests; a launch value is a founder choice) and some MEV leakage.
+Action taken: `src/treasury/Burner.sol`, `Engine.releaseSurplus`, `setBurner`; `test/fork/Deploy.t.sol`
+`test_surplusBuysAndBurnsCoin` on the real venue.
+Reversibility: the burner can be replaced through the timelock.
+Owner action: Optional review (reserve size and daily chunk).
+
 Use this template:
 
 ### D001: Short question

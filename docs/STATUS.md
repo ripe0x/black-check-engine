@@ -1,7 +1,7 @@
 # Current execution status
 
 Stage: Phase 4 in progress. Contracts, coin venue and the single deployment path are built, fork-tested and
-independently reviewed (no Critical/High). Remaining for Phase 4: keeper, game-surplus exit, minimal UI.
+independently reviewed (no Critical/High). Remaining for Phase 4: keeper, minimal UI, stateful invariant test.
 Branch: `dev` (local). Latest milestone commit: see `git log`.
 
 ## Pinned environment
@@ -52,12 +52,11 @@ None.
 
 ## Next executable action
 Keeper (permissionless maintenance: process FWA queue, reprice, list, restock Shapes, fallback compose, forward
-venue fees, collect proceeds); then game surplus to coin buy-and-burn through the venue; then a minimal mobile UI;
-then a stateful invariant test of custody accounting.
+venue fees, collect proceeds, release surplus, burn); then a minimal mobile UI; then a stateful invariant test of
+custody accounting. Burner deployment and `setBurner` are a post-deploy timelock step (not in DeploySystem yet).
 
 ## Open items (not yet built)
 - Keepers are unpaid; maintenance relies on the operator or volunteers.
-- Game surplus has no exit yet (coin buy-and-burn through the venue is next).
 - Opening fee curve against launch snipers dropped (D009 asks the founder).
 
 ## Review queue
@@ -65,7 +64,7 @@ docs/DECISIONS.md: D001 (Black Check needs 25.6% of all possible Check units), D
 draws at processing), D003 (tier schedule pricing instead of signed quotes), D004
 (Shape markup), D005 (decay floor near player break-even), D006 (coin buyouts from a timelocked
 coin schedule), D007 (standing bid instead of marketplace orders), D008 (composition window in draws), D009 (coin venue: fee rate,
-opening tick, opening curve).
+opening tick, opening curve), D010 (surplus buy-and-burn without an oracle).
 
 ## Continuity protocol
 After each meaningful increment, update this file with phase, completed work, exact commands and test outcomes, risks,

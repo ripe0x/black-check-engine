@@ -26,7 +26,8 @@ interface ICoinBurn {
 ///      - NFTs: to the current controller to be listed; consumed by canonical Checks composition; to a buyer who pays
 ///        the published ETH or coin price (`buyWithEth`, `buyWithCoin`).
 ///      - ETH: to a seller of a Check or Edition at the published bid, from the acquisition budget only and within a
-///        weekly cap (`sell*`); to Shapes, minting a replacement for a won Shape at the same backing (`restockShapes`).
+///        weekly cap (`sell*`); to Shapes, minting a replacement for a won Shape at the same backing (`restockShapes`);
+///        game capital above the budget and the reserve, daily, to the timelock-set burner (`releaseSurplus`).
 ///      The engine never approves anyone except the canonical Checks contract on Editions (required by Checks to
 ///      migrate them) and has no generic call. Every price (listing, decay, buyout, bid) is computed from timelocked
 ///      parameters and verified state; no caller supplies one. Maintenance needs the pool's draw queue to be empty.
@@ -88,6 +89,11 @@ contract Engine is Initializable, UUPSUpgradeable {
     uint64 public bidWeek;
     uint128 public bidSpentThisWeek;
     bool internal locked;
+    /// @notice Buys and burns coin with released game surplus (timelock-set; zero until set).
+    address public burner;
+    /// @notice Game capital kept back from the burner: Shape restocking and early-win volatility (timelock-set).
+    uint128 public gameReserve;
+    uint64 public lastSurplusAt;
 
     event ControllerSet(address indexed controller, address indexed retired);
     event Listed(address indexed collection, uint256 indexed tokenId, address indexed controller, uint256 listingId, uint256 price);
@@ -99,6 +105,8 @@ contract Engine is Initializable, UUPSUpgradeable {
     event Acquired(address indexed seller, uint256 indexed tokenId, bool fromEdition, uint8 tier, uint256 ethPaid);
     event Restocked(uint256 indexed wonShapeId, uint256 indexed newShapeId, uint256 backing);
     event Funded(address indexed from, uint256 amount);
+    event SurplusReleased(address indexed burner, uint256 amount);
+    event BurnerSet(address indexed burner, uint128 reserve);
     event Halted(address indexed by, bool halted);
     event RoleSet(bytes32 indexed role, address indexed account);
     /// @dev New values are in the call's input and public getters; the events mark that they changed.
@@ -471,6 +479,22 @@ contract Engine is Initializable, UUPSUpgradeable {
         emit Funded(msg.sender, msg.value);
     }
 
+    /// @notice Sends game capital above `acquisitionBudget + gameReserve` to the burner. Anyone, at most once a day.
+    ///         Waterfall: player entitlements stay inside FWA; acquisitions keep their budget; the reserve stays for
+    ///         Shape restocking; only what is left becomes buy-and-burn.
+    function releaseSurplus() external nonReentrant returns (uint256 amount) {
+        address b = burner;
+        if (b == address(0)) revert NotAllowed();
+        if (block.timestamp < uint256(lastSurplusAt) + 1 days) revert NotAllowed();
+        uint256 keep = acquisitionBudget + gameReserve;
+        if (address(this).balance <= keep) revert BudgetExceeded();
+        amount = address(this).balance - keep;
+        lastSurplusAt = uint64(block.timestamp);
+        emit SurplusReleased(b, amount);
+        (bool ok,) = b.call{value: amount}("");
+        if (!ok) revert PayFailed();
+    }
+
     // ------------------------------------------------------------------ migration and proceeds
 
     /// @notice Brings Checks back from a retired pool, keeping their survived draws. Anyone.
@@ -580,6 +604,12 @@ contract Engine is Initializable, UUPSUpgradeable {
         ) revert BadInput();
         params = p;
         emit ParamsSet();
+    }
+
+    function setBurner(address burner_, uint128 reserve) external onlyTimelock {
+        burner = burner_;
+        gameReserve = reserve;
+        emit BurnerSet(burner_, reserve);
     }
 
     function setOperator(address account) external onlyTimelock {

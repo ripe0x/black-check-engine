@@ -1,0 +1,75 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+
+interface IBurnableCoin {
+    function burn(uint256 amount) external;
+    function balanceOf(address) external view returns (uint256);
+}
+
+/// @notice Turns game surplus into permanently burned coin. Holds ETH the engine releases; anyone may call `burn` at
+///         most once per `interval`, which buys coin on the venue with at most `maxPerBurn` ETH and burns all of it.
+/// @dev No owner and no exits other than the swap: the coin it buys is burned in the same call, and ETH only leaves
+///      into the PoolManager. Without a trusted price, a sandwich around a buy can skim part of that one chunk; the
+///      chunk cap and the interval bound what any one block can lose. The pool key is read from the venue at
+///      construction and fixed.
+contract Burner is IUnlockCallback {
+    IPoolManager public immutable poolManager;
+    IBurnableCoin public immutable coin;
+    uint256 public immutable maxPerBurn;
+    uint256 public immutable interval;
+    PoolKey internal key;
+
+    uint256 public lastBurnAt;
+    uint256 public totalEthSpent;
+    uint256 public totalBurned;
+
+    event Burned(address indexed by, uint256 ethIn, uint256 coinBurned);
+
+    error TooSoon();
+    error Nothing();
+    error NotPoolManager();
+
+    constructor(IPoolManager manager, PoolKey memory key_, uint256 maxPerBurn_, uint256 interval_) {
+        poolManager = manager;
+        key = key_;
+        coin = IBurnableCoin(Currency.unwrap(key_.currency1));
+        maxPerBurn = maxPerBurn_;
+        interval = interval_;
+    }
+
+    function burn() external returns (uint256 ethIn, uint256 burned) {
+        if (block.timestamp < lastBurnAt + interval) revert TooSoon();
+        ethIn = address(this).balance < maxPerBurn ? address(this).balance : maxPerBurn;
+        if (ethIn == 0) revert Nothing();
+        lastBurnAt = block.timestamp;
+        poolManager.unlock(abi.encode(ethIn));
+        burned = coin.balanceOf(address(this));
+        coin.burn(burned);
+        totalEthSpent += ethIn;
+        totalBurned += burned;
+        emit Burned(msg.sender, ethIn, burned);
+    }
+
+    function unlockCallback(bytes calldata data) external returns (bytes memory) {
+        if (msg.sender != address(poolManager)) revert NotPoolManager();
+        uint256 ethIn = abi.decode(data, (uint256));
+        BalanceDelta d = poolManager.swap(
+            key,
+            SwapParams({zeroForOne: true, amountSpecified: -int256(ethIn), sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
+            ""
+        );
+        poolManager.settle{value: uint256(int256(-d.amount0()))}();
+        poolManager.take(key.currency1, address(this), uint256(int256(d.amount1())));
+        return "";
+    }
+
+    receive() external payable {}
+}
