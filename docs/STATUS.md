@@ -1,7 +1,8 @@
 # Current execution status
 
-Stage: Phase 5. Release candidate `rc1` (commit 0aeea0e, local tag) frozen and verified
-(docs/receipts/rc1-verification.md). Ready for an independent audit; not deployable until the gates below close.
+Stage: Phase 5. Release candidate `rc2` (commit 6b00eed, local tag) frozen and verified
+(docs/receipts/rc2-verification.md): rc1 plus the rc1 audit fixes. Not re-audited; not deployable until the gates
+below close.
 Branch: `dev` (local). Latest milestone commit: see `git log`.
 
 ## Pinned environment
@@ -74,6 +75,9 @@ None.
   test/fork/Invariant.t.sol` 4/4, 1,600 calls, 0 reverts. The audit's reproductions, run against the fixed tree
   (not committed), now fail as intended. Contract sizes: Burner, controller, venue and fee buyer well under EIP-170.
 
+- rc2 (6b00eed) frozen and verified once: full suite 60/60; strict invariants 32 x 100, 3,200 calls, 0 reverts;
+  Slither 92 results, same classes as triaged; deploy simulation and local rehearsal pass.
+
 ## Completed since the last status block
 - Keeper (406262c), site (2b17567), audit scope draft (23e32f7), third independent review and its fixes (b608e19:
   opening tick fixed at venue construction, burner reads its pool from the venue), founder review document.
@@ -81,8 +85,9 @@ None.
   (8 x 40) hold; `node --test keeper/test/policy.test.mjs` 7/7; site `tsc --noEmit` passes.
 
 ## Next executable action
-Hand `rc1` (0aeea0e) and docs/AUDIT_SCOPE.md to an independent auditor (owner's choice of auditor and budget). Audit
-findings get fixed on `dev`, affected checks repeated, and a new tag frozen. Before any mainnet deployment: final
+Owner's choice: a retest of `rc2` (6b00eed) against the rc1 findings and the changed code (Burner, FwaV2Controller,
+VenueLiquidity, FwaFeeBuyer, DeploySystem), and whether to push `rc2`. Findings get fixed on `dev`, affected checks
+repeated, and a new tag frozen. Before any mainnet deployment: final
 venue fee and opening tick, name and ticker, council and guardian keys, legal review, keeper pay, and the
 timelock-settable placeholders in docs/FOUNDER_REVIEW.md. Deployment, the FWA fee purchase and the coin launch need
 explicit owner authorization.

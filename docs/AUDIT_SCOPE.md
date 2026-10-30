@@ -1,17 +1,18 @@
 # Audit scope
 
-Not audited. Not deployed. **Frozen candidate: local tag `rc1`, commit 0aeea0e, branch `dev`.** Verification at
-that commit: docs/receipts/rc1-verification.md.
+Not deployed. `rc1` (commit 0aeea0e) was audited (docs/review/rc1-audit.md). **Frozen candidate: local tag `rc2`,
+commit 6b00eed, branch `dev`: rc1 plus the audit fixes (D011), not re-audited.** Verification:
+docs/receipts/rc2-verification.md.
 
-## In scope (1,569 lines of Solidity)
+## In scope (1,603 lines of Solidity)
 
 | File | Lines | Role |
 | --- | --- | --- |
 | src/core/Engine.sol | 654 | UUPS custody and lifecycle: listing, decay, composition, buyouts, standing bid, Shape restock, surplus release, migration, roles |
-| src/fwa/FwaV2Controller.sol | 180 | Immutable owner of one FWA V2 pool; O(1) survival derivation (C010) |
+| src/fwa/FwaV2Controller.sol | 191 | Immutable owner of one FWA V2 pool and its purchase gate; O(1) survival derivation (C010) |
 | src/venue/VenueHook.sol | 146 | Uniswap v4 hook: flat ETH fee to acquisitions |
-| src/venue/VenueLiquidity.sol | 130 | Locks the whole coin supply as single-sided v4 liquidity |
-| src/treasury/Burner.sol | 88 | Ownerless capped buy-and-burn of released surplus |
+| src/venue/VenueLiquidity.sol | 134 | Locks the whole coin supply as single-sided v4 liquidity |
+| src/treasury/Burner.sol | 107 | Ownerless buy-and-burn of released surplus, chunk bounded below sandwich profitability |
 | src/periphery/FwaFeeBuyer.sol | 58 | Buys FWA's pool-creation fee with ETH (deployment helper) |
 | src/token/Coin.sol | 37 | Fixed-supply ERC20 with burnFrom |
 | src/interfaces/*.sol | 276 | Interfaces to FWA, Checks and controllers |
