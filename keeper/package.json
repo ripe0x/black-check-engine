@@ -1,0 +1,17 @@
+{
+  "name": "black-check-engine-keeper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Permissionless, untrusted keeper for a Black Check Engine deployment: settle the FWA queue, list and reprice custody NFTs, restock won Shapes, free deterministic compositions, collect proceeds, forward venue fees, release surplus and burn. Every action is simulated first and skipped if it would revert.",
+  "main": "src/index.mjs",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "once": "node src/index.mjs --once",
+    "test": "node --check src/index.mjs && node --check src/abi.mjs && node --check src/policy.mjs && node --test test/*.test.mjs"
+  },
+  "engines": {"node": ">=22"},
+  "dependencies": {
+    "viem": "2.21.54"
+  }
+}
