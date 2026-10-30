@@ -58,10 +58,17 @@ Branch: `dev` (local). Latest milestone commit: see `git log`.
 ## Current blockers
 None.
 
+## Completed since the last status block
+- Keeper (406262c), site (2b17567), audit scope draft (23e32f7), third independent review and its fixes (b608e19:
+  opening tick fixed at venue construction, burner reads its pool from the venue), founder review document.
+- Evidence at b608e19: `forge test --match-path 'test/fork/*.t.sol'` 50 passed, 0 failed; strict invariants
+  (8 x 40) hold; `node --test keeper/test/policy.test.mjs` 7/7; site `tsc --noEmit` passes.
+
 ## Next executable action
-Integrate the keeper and site builds (review, verify, commit); then the Phase 4 boundary review (spec, status,
-roadmap) and Phase 5 launch-readiness work: audit package, anvil rehearsal script, residual risk register, grouped
-founder review. Burner deployment and `setBurner` are a post-deploy timelock step (not in DeploySystem yet).
+Wait for the founder's answers to docs/FOUNDER_REVIEW.md decisions 1-6, then apply them to LaunchConfig, spec and
+tests, freeze a release candidate, run the full suite once with CANDIDATE_RUN=1, and hand the frozen commit to the
+audit. Independent work available meanwhile: Engine view helpers the keeper and site asked for (current notional of
+an unlisted Check, compose cost, lightweight tier read), which remove duplicated off-chain logic. Burner deployment and `setBurner` are a post-deploy timelock step (not in DeploySystem yet).
 
 ## Incidents
 - 2026-10-30: during a rehearsal the lead stopped an anvil process on port 8548 that it had not started (forked near
