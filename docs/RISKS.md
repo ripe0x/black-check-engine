@@ -29,7 +29,7 @@ Each risk names the experiment that settles it. Status is updated as experiments
 
 | ID | Risk | Severity | Settled by | Status |
 | --- | --- | --- | --- | --- |
-| R1 | A contract cannot create and own an FWA pool (fee token, beta gate, one pool per wallet) | High | E1 | Closed: a contract creates and permanently owns its pool; one pool per controller. Production must buy the 50,000 FWA fee (transfer-locked token; ~0.164 ETH via FWA's v4 pool in collection-games) |
+| R1 | A contract cannot create and own an FWA pool (fee token, beta gate, one pool per wallet) | High | E1 | Closed: a contract creates and permanently owns its pool; one pool per controller. The 50,000 FWA fee is bought with ETH straight into the controller (`src/periphery/FwaFeeBuyer.sol`): 0.1303 ETH at block 26,302,000, then `openPool` succeeds (`test/fork/Deploy.t.sol`) |
 | R2 | Draws survived cannot be counted from FWA state without trusting a keeper | High | E3 | Closed: survival derived in O(1) from FWA `activeListingCount` (C010); the earlier per-sequence cursor (~29k gas per draw) was removed; see D002 |
 | R3 | Public purchases keep the queue unsettled, blocking withdrawal, composition and repricing indefinitely | High | E4 | Closed: `setBool(ACQUISITIONS_ENABLED,false)` stops new draws without touching quotes; the queue drains within 30 blocks plus a permissionless `processAcquisitions` |
 | R4 | A Black Check is unreachable: 64 singles in one call may not fit in a block, and 4,096 units may be unaffordable | High | E5, Phase 3 | Gas closed: `infinity` on 64 real singles uses 742,242 gas. Economics open (D001) |
@@ -40,7 +40,7 @@ Each risk names the experiment that settles it. Status is updated as experiments
 | R9 | No trustless onchain price for Checks: initial notional, buyouts and acquisition limits rely on signers | High | Phase 3 design | Open |
 | R10 | Owner extraction through upgrade, migration, pricing, marketplace routes or approvals | Critical | Phase 2 | Open |
 | R11 | FWA factory owner changes edge, cooldown, global switches or the pool implementation | Medium | E2, Phase 2 | Open |
-| R12 | Trading-fee capture for the coin on a real venue (Uniswap v4 hook) is unproven in this repo | Medium | Phase 4 | Open |
+| R12 | Trading-fee capture for the coin on a real venue (Uniswap v4 hook) is unproven in this repo | Medium | Phase 4 | Closed: locked single-sided v4 liquidity and a flat ETH hook fee to `fundAcquisitions`, fork-tested end to end (`Venue.t.sol`, `Deploy.t.sol`); fee rate and opening tick open (D009) |
 | R13 | Name or legal exposure: paid chance draws for NFTs; confusion with the existing Black Check / BLKCHK | High | Legal review | Open (not technical) |
 
 ## Phase 1 receipts (block 26,302,000, real contracts)

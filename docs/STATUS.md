@@ -1,8 +1,7 @@
 # Current execution status
 
-Stage: Phase 4 in progress. Engine lifecycle (decay, coin-paid composition, buyouts, standing bid, Shape
-restock) and the deployment path are built and fork-tested. Running now: independent review of the Phase 4 engine;
-coin venue port (Uniswap v4 fee route) by a builder subagent.
+Stage: Phase 4 in progress. Contracts, coin venue and the single deployment path are built, fork-tested and
+independently reviewed (no Critical/High). Remaining for Phase 4: keeper, game-surplus exit, minimal UI.
 Branch: `dev` (local). Latest milestone commit: see `git log`.
 
 ## Pinned environment
@@ -30,12 +29,18 @@ Branch: `dev` (local). Latest milestone commit: see `git log`.
   coin buyouts (D006), standing bid for Checks and Editions (D007), Shape restock, reentrancy lock; via_ir (C011).
 - Deployment (83a0d72): `script/DeploySystem.sol` (one routine + postflight), `script/LaunchConfig.sol`,
   `script/Deploy.s.sol` (simulation by default).
+- Phase 4 review (778644a): docs/review/phase4-security-review.md, no Critical/High.
+- Coin venue (f1016d2, 2a1000f): `src/venue/VenueLiquidity.sol`, `src/venue/VenueHook.sol`, in DeploySystem with
+  postflight checks (D009). All fork tests deploy through DeploySystem (5771132).
+- FWA creation fee route: `src/periphery/FwaFeeBuyer.sol` (from collection-games), fork-tested opening the pool.
 
 ## Evidence and test results
 - `forge test --match-path 'test/fork/*.t.sol'` at block 26,302,000 (bf6034f): 35 passed, 0 failed (Pins 3,
   Lifecycle 5, BlackCheck 3, Editions 1, Custody 10, Migration 3, Market 10). Deploy.t.sol: 2 passed (83a0d72).
-- `forge script script/Deploy.s.sol` simulated on the pinned fork with placeholder role addresses: postflight
-  passed, 11,381,870 gas. Nothing broadcast.
+- `forge test --match-path 'test/fork/*.t.sol'` (5771132 + fee route): 47 passed, 0 failed (adds Venue 8, Deploy 4).
+  `forge test --match-path test/unit/Decay.t.sol`: 2 fuzz tests, 256 runs each, pass.
+- `forge script script/Deploy.s.sol` simulated on the pinned fork with placeholder role addresses, including the
+  venue: success, postflight passed. Nothing broadcast. Buying the FWA creation fee costs 0.1303 ETH at the block.
 - `python3 sim/model.py`: 17 scenarios x 60 seeded runs, results in sim/results/phase3.md (model, not evidence). Real mainnet contracts; setup cheats listed in docs/RISKS.md
   "Phase 1 receipts". `NextGenControllerMock` in Migration.t.sol is a labeled mock, not evidence about a real future
   FWA version.
@@ -46,19 +51,21 @@ Branch: `dev` (local). Latest milestone commit: see `git log`.
 None.
 
 ## Next executable action
-Resolve Phase 4 review findings; integrate the venue (review its diff, fork tests, commit); route SystemBase through
-DeploySystem; FWA creation-fee purchase route; keeper; fuzz and invariant tests; minimal UI; Phase 4 docs.
+Keeper (permissionless maintenance: process FWA queue, reprice, list, restock Shapes, fallback compose, forward
+venue fees, collect proceeds); then game surplus to coin buy-and-burn through the venue; then a minimal mobile UI;
+then a stateful invariant test of custody accounting.
 
 ## Open items (not yet built)
 - Keepers are unpaid; maintenance relies on the operator or volunteers.
-- Game surplus has no exit yet (no coin buy-and-burn until the venue exists).
-- The 50,000 FWA pool-creation fee must be bought into the controller (FWA is transfer-locked).
+- Game surplus has no exit yet (coin buy-and-burn through the venue is next).
+- Opening fee curve against launch snipers dropped (D009 asks the founder).
 
 ## Review queue
 docs/DECISIONS.md: D001 (Black Check needs 25.6% of all possible Check units), D002 (survival counts allocating
 draws at processing), D003 (tier schedule pricing instead of signed quotes), D004
 (Shape markup), D005 (decay floor near player break-even), D006 (coin buyouts from a timelocked
-coin schedule), D007 (standing bid instead of marketplace orders), D008 (composition window in draws).
+coin schedule), D007 (standing bid instead of marketplace orders), D008 (composition window in draws), D009 (coin venue: fee rate,
+opening tick, opening curve).
 
 ## Continuity protocol
 After each meaningful increment, update this file with phase, completed work, exact commands and test outcomes, risks,
