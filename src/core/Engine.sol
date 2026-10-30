@@ -16,14 +16,13 @@ interface IShapesBacking {
 /// @dev Asset exits, exhaustively: an NFT moves to the current controller to be listed, comes back from a controller,
 ///      or is consumed by canonical Checks composition. ETH only arrives in this version. The engine never grants an
 ///      approval and has no generic call. Every listing price comes from the timelocked tier schedule (Checks) or
-///      the Shape's own backing; no caller supplies a price. Maintenance needs the pool's draw queue to be empty.
+///      the Shape's own backing and the timelocked markup; no caller supplies a price. Maintenance needs the pool's draw queue to be empty.
 ///      Storage is append-only across upgrades.
 contract Engine is Initializable, UUPSUpgradeable {
     uint8 internal constant TIERS = 8; // divisorIndex 0 (80 checks) .. 7 (Black)
     uint8 internal constant SINGLE = 6;
     uint8 internal constant BLACK = 7;
-    /// @notice Sequences counted inside a maintenance call before it requires a separate `advance`.
-    uint256 public constant ADVANCE_IN_MAINTENANCE = 64;
+    uint16 public constant MAX_SHAPE_MARKUP_BPS = 5000;
 
     IChecksOriginals public immutable checks;
     IShapesBacking public immutable shapes;
@@ -50,6 +49,8 @@ contract Engine is Initializable, UUPSUpgradeable {
     /// @notice Draws survived in earlier listings of the current tier (carried across migrations).
     mapping(uint256 tokenId => uint32) public carriedDraws;
     mapping(uint256 shapeId => Listing) public shapeListing;
+    /// @notice Shapes list at backing x (1 + markup): a won Shape costs its backing plus the Shapes mint fee (D004).
+    uint16 public shapeMarkupBps;
 
     event ControllerSet(address indexed controller, address indexed retired);
     event Listed(address indexed collection, uint256 indexed tokenId, address indexed controller, uint256 listingId, uint256 price);
@@ -59,6 +60,7 @@ contract Engine is Initializable, UUPSUpgradeable {
     event Halted(address indexed by, bool halted);
     event RoleSet(bytes32 indexed role, address indexed account);
     event ScheduleSet(uint256[TIERS] tierNotional, uint32[7] drawsToCompose);
+    event ShapeMarkupSet(uint16 bps);
 
     error NotTimelock();
     error NotAllowed();
@@ -69,7 +71,6 @@ contract Engine is Initializable, UUPSUpgradeable {
     error TierNotListed();
     error NotEligible();
     error QueueBusy();
-    error NotCaughtUp();
     error UnknownController();
     error BadInput();
 
@@ -90,8 +91,11 @@ contract Engine is Initializable, UUPSUpgradeable {
         address guardian_,
         IController controller_,
         uint256[TIERS] calldata tierNotional_,
-        uint32[7] calldata drawsToCompose_
+        uint32[7] calldata drawsToCompose_,
+        uint16 shapeMarkupBps_
     ) external initializer {
+        if (shapeMarkupBps_ > MAX_SHAPE_MARKUP_BPS) revert BadInput();
+        shapeMarkupBps = shapeMarkupBps_;
         timelock = timelock_;
         operator = operator_;
         guardian = guardian_;
@@ -117,7 +121,7 @@ contract Engine is Initializable, UUPSUpgradeable {
         uint256[] memory prices = new uint256[](tokenIds.length);
         for (uint256 i; i < tokenIds.length; ++i) {
             uint256 id = tokenIds[i];
-            if (checkListing[id].controller != address(0)) revert AlreadyListed();
+            if (_clearIfWon(checkListing[id])) delete carriedDraws[id]; // a Check that left and came back starts anew
             IChecksOriginals.Check memory info = checks.getCheck(id);
             if (!info.isRevealed) revert NotRevealed();
             uint256 price = tierNotional[info.stored.divisorIndex];
@@ -138,8 +142,8 @@ contract Engine is Initializable, UUPSUpgradeable {
         uint256[] memory prices = new uint256[](shapeIds.length);
         for (uint256 i; i < shapeIds.length; ++i) {
             uint256 id = shapeIds[i];
-            if (shapeListing[id].controller != address(0)) revert AlreadyListed();
-            prices[i] = shapes.backingOf(id);
+            _clearIfWon(shapeListing[id]);
+            prices[i] = shapes.backingOf(id) * (10_000 + shapeMarkupBps) / 10_000;
             shapes.transferFrom(address(this), address(c), id);
         }
         uint256[] memory listingIds = c.list(address(shapes), shapeIds, prices);
@@ -147,6 +151,16 @@ contract Engine is Initializable, UUPSUpgradeable {
             shapeListing[shapeIds[i]] = Listing(address(c), uint64(listingIds[i]));
             emit Listed(address(shapes), shapeIds[i], address(c), listingIds[i], prices[i]);
         }
+    }
+
+    /// @dev A record whose listing is still in the draw blocks relisting. A record whose listing FWA has since given to
+    ///      a winner is stale (the NFT left and was sent back), so it is cleared. Returns true if it cleared one.
+    function _clearIfWon(Listing storage l) internal returns (bool) {
+        if (l.controller == address(0)) return false;
+        if (IController(l.controller).isListed(l.listingId)) revert AlreadyListed();
+        delete l.controller;
+        delete l.listingId;
+        return true;
     }
 
     // ------------------------------------------------------------------ survival and composition
@@ -161,9 +175,9 @@ contract Engine is Initializable, UUPSUpgradeable {
     function eligible(uint256 tokenId) public view returns (bool) {
         Listing memory l = checkListing[tokenId];
         if (l.controller != address(controller) || l.controller == address(0)) return false;
+        if (!IController(l.controller).isListed(l.listingId)) return false; // won: no longer ours
         uint8 tier = checks.getCheck(tokenId).stored.divisorIndex;
         if (tier >= BLACK) return false;
-        // A Check FWA has selected is no longer listed there, so it survives zero draws and is never eligible.
         uint256 draws = survivedDraws(tokenId);
         return draws != 0 && draws >= drawsToCompose[tier];
     }
@@ -216,9 +230,6 @@ contract Engine is Initializable, UUPSUpgradeable {
     /// @dev Withdraws listed Checks from `c` back here, carrying their survived draws. Needs an empty queue.
     function _withdrawChecks(IController c, uint256[] memory tokenIds) internal {
         if (c.unsettled() != 0) revert QueueBusy();
-        // Count every processed draw first; a long backlog is cleared by anyone calling `advance` beforehand.
-        c.advance(ADVANCE_IN_MAINTENANCE);
-        if (!c.caughtUp()) revert NotCaughtUp();
         uint256[] memory listingIds = new uint256[](tokenIds.length);
         for (uint256 i; i < tokenIds.length; ++i) {
             uint256 id = tokenIds[i];
@@ -229,13 +240,7 @@ contract Engine is Initializable, UUPSUpgradeable {
             delete checkListing[id];
             emit Unlisted(address(checks), id, address(c), l.listingId);
         }
-        // FWA takes at most 20 listings per withdrawal.
-        for (uint256 start; start < listingIds.length; start += 20) {
-            uint256 n = listingIds.length - start < 20 ? listingIds.length - start : 20;
-            uint256[] memory chunk = new uint256[](n);
-            for (uint256 j; j < n; ++j) chunk[j] = listingIds[start + j];
-            c.withdraw(chunk);
-        }
+        c.withdraw(listingIds);
         for (uint256 i; i < tokenIds.length; ++i) {
             if (checks.ownerOf(tokenIds[i]) != address(this)) revert NotHeld();
         }
@@ -283,7 +288,9 @@ contract Engine is Initializable, UUPSUpgradeable {
 
     // ------------------------------------------------------------------ authority
 
-    /// @notice Stops new draws. Operator or guardian. Settlement, refunds and deliveries are unaffected.
+    /// @notice Stops new draws. Operator or guardian. Settlement, refunds, deliveries and maintenance on settled state
+    ///         (composition, migration, collection) continue: a halt protects players from new commitments, it does
+    ///         not freeze the protocol.
     function halt() external {
         if (msg.sender != operator && msg.sender != guardian) revert NotAllowed();
         halted = true;
@@ -319,6 +326,12 @@ contract Engine is Initializable, UUPSUpgradeable {
         tierNotional = tierNotional_;
         drawsToCompose = drawsToCompose_;
         emit ScheduleSet(tierNotional_, drawsToCompose_);
+    }
+
+    function setShapeMarkup(uint16 bps) external onlyTimelock {
+        if (bps > MAX_SHAPE_MARKUP_BPS) revert BadInput();
+        shapeMarkupBps = bps;
+        emit ShapeMarkupSet(bps);
     }
 
     function setOperator(address account) external onlyTimelock {

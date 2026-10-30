@@ -6,7 +6,6 @@ import {ForkBase} from "./ForkBase.sol";
 import {Lab} from "./Lab.sol";
 import {IFWAPool, IFWAFactory, FWA_ACQUISITIONS_ENABLED} from "../../src/interfaces/IFWA.sol";
 import {IChecksOriginals} from "../../src/interfaces/IChecks.sol";
-import {SurvivalCursor} from "../../src/game/SurvivalCursor.sol";
 
 interface IERC20Approve {
     function approve(address spender, uint256 amount) external returns (bool);
@@ -29,7 +28,11 @@ interface IShapesMint {
 contract LifecycleTest is ForkBase {
     Lab internal lab;
     IFWAPool internal pool;
-    SurvivalCursor internal cursor;
+    // The controller survival rule (C010), mirrored here for the Lab-owned pool: allocations = listed - withdrawn -
+    // activeListingCount, valid because the Lab is the only depositor and lists only into an empty queue.
+    uint256 internal listedCount;
+    uint256 internal withdrawnCount;
+    mapping(uint256 => uint256) internal entry;
     address internal player = makeAddr("player");
     uint256 internal constant CHECK_PRICE = 1 ether;
     uint256 internal constant SHAPE_BACKING = 0.01 ether;
@@ -40,7 +43,6 @@ contract LifecycleTest is ForkBase {
         lab = new Lab();
         vm.txGasPrice(1 gwei);
         pool = _createPool(keccak256("checks-survival.lab"));
-        cursor = new SurvivalCursor(pool, address(lab));
         lab.exec(address(CHECKS), abi.encodeCall(IChecksOriginals.setApprovalForAll, (address(pool), true)));
         lab.exec(SHAPES, abi.encodeCall(IShapesMint.setApprovalForAll, (address(pool), true)));
     }
@@ -86,11 +88,27 @@ contract LifecycleTest is ForkBase {
     function _list(address collection, uint256[] memory ids, uint256 price) internal returns (uint256[] memory lids) {
         IFWAPool.ListingInput[] memory items = new IFWAPool.ListingInput[](ids.length);
         for (uint256 i; i < ids.length; ++i) items[i] = IFWAPool.ListingInput(collection, ids[i], price);
-        cursor.advance(type(uint256).max);
+        assertEq(pool.unsettledAcquisitionCount(), 0, "list only into an empty queue");
         lids = abi.decode(lab.exec(address(pool), abi.encodeCall(IFWAPool.listNFTs, (items))), (uint256[]));
+        listedCount += lids.length;
         for (uint256 i; i < lids.length; ++i) {
-            lab.exec(address(cursor), abi.encodeCall(SurvivalCursor.startEpisode, (lids[i])));
+            assertEq(uint8(_listingStatus(lids[i])), uint8(IFWAPool.ListingStatus.Active), "never staged");
+            entry[lids[i]] = _allocated();
         }
+    }
+
+    function _allocated() internal view returns (uint256) {
+        return listedCount - withdrawnCount - pool.activeListingCount();
+    }
+
+    function _survived(uint256 listingId) internal view returns (uint256) {
+        if (_listingStatus(listingId) != IFWAPool.ListingStatus.Active) return 0;
+        return _allocated() - entry[listingId];
+    }
+
+    function _withdraw(uint256[] memory listingIds) internal {
+        lab.exec(address(pool), abi.encodeCall(IFWAPool.withdrawListingsTo, (listingIds, address(lab))));
+        withdrawnCount += listingIds.length;
     }
 
     function _enable(bool on) internal {
@@ -220,16 +238,13 @@ contract LifecycleTest is ForkBase {
         assertEq(uint8(_status(r4)), uint8(IFWAPool.AcquisitionStatus.Fulfilled));
         assertEq(uint8(_status(r5)), uint8(IFWAPool.AcquisitionStatus.Refunded));
 
-        // Before the cursor moves, nothing is credited; one call counts all five, repeat calls change nothing.
-        assertEq(cursor.survived(checkListings[0]), 0);
-        uint256 g = gasleft();
-        assertEq(cursor.advance(100), 5);
-        console2.log("cursor.advance gas for 5 sequences", g - gasleft());
-        assertEq(cursor.advance(100), 0);
-        assertEq(cursor.allocated(), 2);
-        for (uint256 i; i < 4; ++i) assertEq(cursor.survived(checkListings[i]), 2);
-        assertEq(cursor.survived(shapeListings[2]), 2);
-        assertEq(cursor.survived(shapeListings[0]), 0, "a won listing has no survival");
+        // Two of five requests allocated a prize; expired, timed-out and slippage-refunded requests left the active
+        // count untouched. Every still-listed prize survived exactly those two.
+        assertEq(pool.activeListingCount(), 6);
+        assertEq(_allocated(), 2);
+        for (uint256 i; i < 4; ++i) assertEq(_survived(checkListings[i]), 2);
+        assertEq(_survived(shapeListings[2]), 2);
+        assertEq(_survived(shapeListings[0]), 0, "a won listing has no survival");
 
         // Refunds are purchaser credits (pull).
         uint256 credit = pool.acquisitionRefundCredit(player);
@@ -238,12 +253,6 @@ contract LifecycleTest is ForkBase {
         vm.prank(player);
         pool.withdrawAcquisitionRefund();
         assertEq(player.balance - before, credit);
-
-        // Only the controller can start episodes; a second start is refused.
-        vm.expectRevert(SurvivalCursor.NotRecorder.selector);
-        cursor.startEpisode(checkListings[0]);
-        vm.expectRevert(SurvivalCursor.AlreadyRecorded.selector);
-        lab.exec(address(cursor), abi.encodeCall(SurvivalCursor.startEpisode, (checkListings[0])));
     }
 
     // ---------------------------------------------------------------- E4
@@ -271,11 +280,10 @@ contract LifecycleTest is ForkBase {
         deliverWord(r1, _wordFor(shapeListings[0]));
         pool.processAcquisitions(10);
         assertEq(uint8(_status(r1)), uint8(IFWAPool.AcquisitionStatus.Fulfilled));
-        cursor.advance(10);
-        assertEq(cursor.survived(checkListings[0]), 1);
+        assertEq(_survived(checkListings[0]), 1);
 
         // Withdraw both, compose, relist the survivor as a new episode.
-        lab.exec(address(pool), abi.encodeCall(IFWAPool.withdrawListingsTo, (checkListings, address(lab))));
+        _withdraw(checkListings);
         assertEq(CHECKS.ownerOf(checks[0]), address(lab));
         uint256 g = gasleft();
         lab.exec(address(CHECKS), abi.encodeCall(IChecksOriginals.composite, (checks[0], checks[1], false)));
@@ -285,16 +293,15 @@ contract LifecycleTest is ForkBase {
         uint256[] memory survivor = new uint256[](1);
         survivor[0] = checks[0];
         uint256[] memory relisted = _list(address(CHECKS), survivor, 2 * CHECK_PRICE);
-        assertEq(cursor.survived(relisted[0]), 0, "new episode starts at zero");
-        assertEq(cursor.survived(checkListings[0]), 0, "old episode ended");
+        assertEq(_survived(relisted[0]), 0, "new episode starts at zero");
+        assertEq(_survived(checkListings[0]), 0, "old episode ended");
 
         _enable(true);
         uint256 r2 = _pull();
         vm.roll(block.number + 3);
         deliverWord(r2, _wordFor(shapeListings[1]));
         pool.processAcquisitions(10);
-        cursor.advance(10);
-        assertEq(cursor.survived(relisted[0]), 1);
+        assertEq(_survived(relisted[0]), 1);
     }
 
     // ---------------------------------------------------------------- E8
@@ -329,7 +336,6 @@ contract LifecycleTest is ForkBase {
         pool.acquire{value: total}(player, feeAfter, 0, 10_000, staleVersion, block.timestamp + 1 hours);
 
         // A repriced listing keeps its survival episode (the listing ID is unchanged).
-        cursor.advance(10);
-        assertEq(cursor.survived(checkListings[0]), 1);
+        assertEq(_survived(checkListings[0]), 1);
     }
 }

@@ -3,7 +3,6 @@ pragma solidity 0.8.28;
 
 import {IFWAPool, IFWAFactory, FWA_ACQUISITIONS_ENABLED} from "../interfaces/IFWA.sol";
 import {IController} from "../interfaces/IController.sol";
-import {SurvivalCursor} from "../game/SurvivalCursor.sol";
 
 interface IERC20Approve {
     function approve(address spender, uint256 amount) external returns (bool);
@@ -21,7 +20,13 @@ interface IERC721Min {
 ///      and proceeds are forwarded only to `engine`. It has no generic call and approves only its own pool, for the
 ///      two collections it can list. The pool address is predicted at construction from the pinned implementation;
 ///      `open` refuses any other result.
-contract FwaV2Controller is IController, SurvivalCursor {
+///
+///      Survival (C010, D002): this contract is the pool's only depositor and lists only into an empty queue, so FWA
+///      activates every listing at once and never stages one. FWA then removes an active listing in exactly two
+///      ways (`_settleAndRemove`): a withdrawal by this contract, or a draw allocating that listing as its prize. So
+///      prize-allocating draws = listed - withdrawn - `activeListingCount()`, read from FWA state with no per-draw
+///      work, and a listing still Active has survived every allocation since its entry.
+contract FwaV2Controller is IController {
     address public immutable engine;
     IFWAFactory public immutable factory;
     address public immutable implementation;
@@ -29,14 +34,24 @@ contract FwaV2Controller is IController, SurvivalCursor {
     address public immutable fwaToken;
     address public immutable checks;
     address public immutable shapes;
+    IFWAPool public immutable pool;
 
-    /// @notice Sequences counted inside `list` before it gives up; anyone can call `advance` to catch up first.
-    uint256 public constant LIST_ADVANCE = 64;
+    /// @notice FWA's inventory batch limit (`MAX_INVENTORY_BATCH`).
+    uint256 public constant BATCH = 20;
+
+    uint256 public listed;
+    uint256 public withdrawn;
+    /// @notice `allocated()` when the listing entered, plus one (zero: not listed by this contract).
+    mapping(uint256 listingId => uint256) internal entryPlusOne;
+
+    event EpisodeStarted(uint256 indexed listingId, uint256 entry);
 
     error NotEngine();
     error PoolMismatch();
     error UnknownCollection();
     error NotHeld();
+    error QueueBusy();
+    error NotActive();
     error Forward();
 
     modifier onlyEngine() {
@@ -51,7 +66,7 @@ contract FwaV2Controller is IController, SurvivalCursor {
         bytes32 salt_,
         address checks_,
         address shapes_
-    ) SurvivalCursor(IFWAPool(factory_.predictPoolAddress(address(this), salt_)), address(0)) {
+    ) {
         engine = engine_;
         factory = factory_;
         implementation = implementation_;
@@ -59,6 +74,7 @@ contract FwaV2Controller is IController, SurvivalCursor {
         fwaToken = factory_.fwaToken();
         checks = checks_;
         shapes = shapes_;
+        pool = IFWAPool(factory_.predictPoolAddress(address(this), salt_));
     }
 
     /// @dev The FWA creation fee must already be held here (FWA is transfer-locked; it is bought into this address).
@@ -76,20 +92,42 @@ contract FwaV2Controller is IController, SurvivalCursor {
         returns (uint256[] memory listingIds)
     {
         if (collection != checks && collection != shapes) revert UnknownCollection();
-        IFWAPool.ListingInput[] memory items = new IFWAPool.ListingInput[](tokenIds.length);
-        for (uint256 i; i < tokenIds.length; ++i) {
-            if (IERC721Min(collection).ownerOf(tokenIds[i]) != address(this)) revert NotHeld();
-            items[i] = IFWAPool.ListingInput(collection, tokenIds[i], prices[i]);
-        }
-        advance(LIST_ADVANCE);
-        listingIds = pool.listNFTs(items);
-        for (uint256 i; i < listingIds.length; ++i) {
-            _startEpisode(listingIds[i]);
+        // An empty queue makes FWA activate each listing immediately (no staging), which the survival rule needs.
+        if (pool.unsettledAcquisitionCount() != 0) revert QueueBusy();
+        uint256 n = tokenIds.length;
+        listingIds = new uint256[](n);
+        for (uint256 start; start < n; start += BATCH) {
+            uint256 m = n - start < BATCH ? n - start : BATCH;
+            IFWAPool.ListingInput[] memory items = new IFWAPool.ListingInput[](m);
+            for (uint256 j; j < m; ++j) {
+                uint256 id = tokenIds[start + j];
+                if (IERC721Min(collection).ownerOf(id) != address(this)) revert NotHeld();
+                items[j] = IFWAPool.ListingInput(collection, id, prices[start + j]);
+            }
+            uint256[] memory ids = pool.listNFTs(items);
+            listed += m;
+            uint256 entry = allocated();
+            for (uint256 j; j < m; ++j) {
+                (,,,,,,, IFWAPool.ListingStatus st) = pool.listings(ids[j]);
+                if (st != IFWAPool.ListingStatus.Active) revert NotActive();
+                entryPlusOne[ids[j]] = entry + 1;
+                listingIds[start + j] = ids[j];
+                emit EpisodeStarted(ids[j], entry);
+            }
         }
     }
 
+    /// @dev Only Active listings can be withdrawn here (this contract never stages), so each one lowers FWA's
+    ///      active count by one, matched by `withdrawn`.
     function withdraw(uint256[] calldata listingIds) external onlyEngine {
-        pool.withdrawListingsTo(listingIds, engine);
+        uint256 n = listingIds.length;
+        for (uint256 start; start < n; start += BATCH) {
+            uint256 m = n - start < BATCH ? n - start : BATCH;
+            uint256[] memory chunk = new uint256[](m);
+            for (uint256 j; j < m; ++j) chunk[j] = listingIds[start + j];
+            pool.withdrawListingsTo(chunk, engine);
+            withdrawn += m;
+        }
     }
 
     function reprice(uint256 listingId, uint256 price) external onlyEngine {
@@ -115,20 +153,24 @@ contract FwaV2Controller is IController, SurvivalCursor {
         IERC721Min(collection).transferFrom(address(this), engine, tokenId);
     }
 
-    function survived(uint256 listingId) public view override(IController, SurvivalCursor) returns (uint256) {
-        return SurvivalCursor.survived(listingId);
+    /// @notice Draws that allocated a prize in this pool since it opened.
+    function allocated() public view returns (uint256) {
+        return listed - withdrawn - pool.activeListingCount();
     }
 
-    function caughtUp() public view override(IController, SurvivalCursor) returns (bool) {
-        return SurvivalCursor.caughtUp();
+    function isListed(uint256 listingId) public view returns (bool) {
+        if (entryPlusOne[listingId] == 0) return false;
+        (,,,,,,, IFWAPool.ListingStatus st) = pool.listings(listingId);
+        return st == IFWAPool.ListingStatus.Active;
+    }
+
+    function survived(uint256 listingId) external view returns (uint256) {
+        if (!isListed(listingId)) return 0;
+        return allocated() - (entryPlusOne[listingId] - 1);
     }
 
     function unsettled() external view returns (uint256) {
         return pool.unsettledAcquisitionCount();
-    }
-
-    function advance(uint256 maxCount) public override(IController, SurvivalCursor) returns (uint256) {
-        return SurvivalCursor.advance(maxCount);
     }
 
     /// @dev Only FWA owner proceeds arrive here, and `collect` forwards them in the same call.

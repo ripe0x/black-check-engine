@@ -57,20 +57,17 @@ contract NextGenControllerMock is IController {
 
     function recover(uint256) external {}
 
+    function isListed(uint256 listingId) external view returns (bool) {
+        return collectionOf[listingId] != address(0)
+            && IERC721T(collectionOf[listingId]).ownerOf(tokenOf[listingId]) == address(this);
+    }
+
     function survived(uint256) external pure returns (uint256) {
         return 0;
     }
 
     function unsettled() external pure returns (uint256) {
         return 0;
-    }
-
-    function advance(uint256) external pure returns (uint256) {
-        return 0;
-    }
-
-    function caughtUp() external pure returns (bool) {
-        return true;
     }
 }
 
@@ -132,7 +129,6 @@ contract MigrationTest is SystemBase {
         engine.resume();
         assertEq(engine.survivedDraws(checkIds[0]), 2);
         _drawSelecting(pool2, _shapeListing(shapeIds[2]));
-        next.advance(10);
         assertEq(engine.survivedDraws(checkIds[0]), 3);
 
         engine.compose(checkIds[0], checkIds[1], false);

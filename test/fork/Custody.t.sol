@@ -94,7 +94,7 @@ contract CustodyTest is SystemBase {
         (,,,,, uint256 price,,) = pool.listings(_checkListing(checkIds[0]));
         assertEq(price, _tiers()[0]);
         (,,,,, uint256 shapePrice,,) = pool.listings(_shapeListing(shapeIds[0]));
-        assertEq(shapePrice, SHAPE_BACKING);
+        assertEq(shapePrice, SHAPE_PRICE, "backing x (1 + timelocked markup)");
     }
 
     /// A9: the engine leaves no approvals behind; the controller approves only its own pool.
@@ -129,7 +129,6 @@ contract CustodyTest is SystemBase {
 
         _drawSelecting(pool, _shapeListing(shapeIds[0]));
         _drawSelecting(pool, _shapeListing(shapeIds[1]));
-        controller.advance(10);
         assertEq(engine.survivedDraws(checkIds[0]), 2);
 
         uint256 pending = _pullAt(pool);
@@ -152,6 +151,33 @@ contract CustodyTest is SystemBase {
         CHECKS.ownerOf(checkIds[1]);
     }
 
+    /// Review finding: a won Check sent back to the engine is relistable and starts a fresh survival history.
+    function test_wonCheckReturnedIsRelistableWithFreshHistory() public {
+        _drawSelecting(pool, _shapeListing(shapeIds[0]));
+        _drawSelecting(pool, _checkListing(checkIds[0]));
+        assertEq(CHECKS.ownerOf(checkIds[0]), player);
+        assertFalse(engine.eligible(checkIds[0]));
+        assertEq(engine.survivedDraws(checkIds[0]), 0);
+
+        vm.prank(player);
+        CHECKS.transferFrom(player, address(engine), checkIds[0]);
+        uint256[] memory one = new uint256[](1);
+        one[0] = checkIds[0];
+        engine.listChecks(one);
+        assertEq(CHECKS.ownerOf(checkIds[0]), address(pool));
+        assertEq(engine.survivedDraws(checkIds[0]), 0);
+        // A still-listed Check cannot be listed twice.
+        vm.expectRevert(Engine.AlreadyListed.selector);
+        engine.listChecks(one);
+    }
+
+    /// Batches above FWA's 20-item inventory limit are split by the controller.
+    function test_listsMoreThanTwentyInOneCall() public {
+        uint256[] memory many = _mintShapes(25);
+        engine.listShapes(many);
+        assertEq(IShapesBacking(SHAPES).ownerOf(many[24]), address(pool));
+    }
+
     /// Proceeds go only to the engine, whoever triggers collection.
     function test_collectSendsProceedsToEngine() public {
         _drawSelecting(pool, _shapeListing(shapeIds[0]));
@@ -171,7 +197,6 @@ contract CustodyTest is SystemBase {
         // Unlist one Check into custody first so there is something the drain can reach directly.
         _drawSelecting(pool, _shapeListing(shapeIds[0]));
         _drawSelecting(pool, _shapeListing(shapeIds[1]));
-        controller.advance(10);
         engine.compose(checkIds[0], checkIds[1], false); // survivor relisted; withdraw path exercised
         address evil = address(new DrainEngine(CHECKS, IShapesBacking(SHAPES)));
         bytes memory data = abi.encodeCall(UUPSUpgradeable.upgradeToAndCall, (evil, ""));

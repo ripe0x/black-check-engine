@@ -25,6 +25,8 @@ interface IShapesMintTo {
 abstract contract SystemBase is ForkBase {
     uint256 internal constant DELAY = 7 days;
     uint256 internal constant SHAPE_BACKING = 0.01 ether;
+    uint16 internal constant MARKUP = 1000;
+    uint256 internal constant SHAPE_PRICE = SHAPE_BACKING * 11 / 10;
 
     address internal council = makeAddr("council");
     address internal guardian = makeAddr("guardian");
@@ -60,7 +62,7 @@ abstract contract SystemBase is ForkBase {
                         address(impl),
                         abi.encodeCall(
                             Engine.initialize,
-                            (address(timelock), operator, guardian, IController(address(controller)), _tiers(), _thresholds())
+                            (address(timelock), operator, guardian, IController(address(controller)), _tiers(), _thresholds(), MARKUP)
                         )
                     )
                 )

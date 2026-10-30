@@ -38,8 +38,10 @@ Recommended choice: (a). The selection is final at processing; delivery concerns
 not reproducible with Checks or Shapes (plain `transferFrom`, well inside FWA's 150k stipend), so (a) and (b) differ
 only in a path nobody can trigger cheaply, and (a) has no liveness hole.
 Tradeoff: in the theoretical failed-delivery case, a refunded draw still counts as survived.
-Action taken: `src/game/SurvivalCursor.sol`, fork-tested in `test/fork/Lifecycle.t.sol` (E3, E4, E8).
-Reversibility: one condition in `advance`.
+Action taken: first a per-sequence cursor, now derived from FWA's active count (C010), which counts exactly the
+same draws: every allocation removes one active listing at processing. Fork-tested in `test/fork/Lifecycle.t.sol`
+(E3, E4, E8) and `Custody.t.sol`.
+Reversibility: the alternative needs a per-sequence cursor again (~29k gas per draw).
 Owner action: Optional review.
 
 ### D003: Price listings from a timelocked tier schedule instead of signed market quotes
@@ -75,7 +77,8 @@ fewer cheap prizes and faster Check turnover.
 Recommended choice: (a). Base-case operating P&L +13 ETH. Players still win redeemable ETH; a Shape's expected value
 to a player is 1/1.155 of its share of the fee instead of 1/1.05.
 Tradeoff: Shape draws are slightly worse for players.
-Action taken: modelled; engine change follows the Phase 2 review (`listShapes` price = backing × (1 + markup)).
+Action taken: `Engine.shapeMarkupBps` (timelock setter, max 50%), `listShapes` price = backing × (1 + markup);
+`test/fork/Custody.t.sol` A6.
 Reversibility: timelocked parameter.
 Owner action: Optional review.
 
@@ -135,7 +138,8 @@ Record important noncontroversial implementation choices with evidence and commi
 - C010 Survival is derived, not iterated: the controller is its pool's only depositor and never stages listings, so
   every prize allocation removes exactly one of its active listings (FWA `_settleAndRemove`, verified source).
   Allocations = listed − withdrawn − `activeListingCount()`. Same semantics as the draw-by-draw cursor (D002), O(1),
-  no keeper gas per draw. Replaces `SurvivalCursor` after the Phase 2 review.
+  no keeper gas per draw. `SurvivalCursor` removed. Evidence: `test/fork/Lifecycle.t.sol` E3 asserts the active-count
+  identity on the real pool; `Custody.t.sol` exercises it through the engine.
 - C008 Governance from stock parts: OpenZeppelin `TimelockController` (council the only proposer, guardian an
   extra canceller, open execution, self-administered, 7-day delay) and an ERC1967/UUPS engine whose upgrades, role
   changes, schedule and controller changes are timelock-only. Operator powers: halt only. Guardian: halt, resume,
