@@ -17,6 +17,9 @@ remappings = [
     "forge-std/=lib/forge-std/src/",
     "solady/=lib/solady/src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "@uniswap/v4-core/=lib/v4-core/",
+    "v4-core/=lib/v4-core/src/",
+    "@uniswap/v4-periphery/=lib/v4-periphery/",
 ]
 # Fork tests read MAINNET_RPC_URL (default: the Tenderly public gateway) at the block pinned in test/fork/ForkBase.sol.
 gas_limit = "18446744073709551615"

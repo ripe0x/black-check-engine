@@ -152,6 +152,27 @@ burns nothing (`test/fork/Market.t.sol`).
 Reversibility: one condition.
 Owner action: Optional review.
 
+### D009: Coin venue: full supply locked single-sided on Uniswap v4, flat ETH fee to acquisitions, no opening curve
+Status: REVIEW
+Importance: High
+Why it came up: Phase 4 venue (R12). The coin needs a market and a fee that funds Checks without an owner who can
+divert it.
+Desired outcome: trading funds acquisitions automatically; nobody can pull liquidity or redirect fees.
+Options considered: (a) the collection-games design trimmed: the whole supply as one single-sided position (0 ETH
+seeded) locked forever, a hook charging an immutable flat fee in ETH each way, forwarded by anyone to
+`Engine.fundAcquisitions`; (b) the same with collection-games' 69%-to-base opening fee curve against launch snipers;
+(c) a transfer tax (spec prefers a venue fee).
+Recommended choice: (a), with three founder inputs: fee rate (1% placeholder, immutable, capped at 10%); opening
+tick (161,200, about 100 ETH fully diluted, borrowed from collection-games); whether launch sniping matters enough
+to restore the curve (b).
+Tradeoff: without the curve, the first block's buyers can take a large share of supply at the opening price; with no
+seeded ETH, early sellers can only sell what was bought.
+Action taken: `src/venue/VenueLiquidity.sol`, `src/venue/VenueHook.sol`, `test/fork/Venue.t.sol` (8 pass on the real
+PoolManager, a real Engine behind its proxy credited through `fundAcquisitions`). Not yet in `DeploySystem`; when it
+is, postflight must check the hook's engine, launcher and fee, since the deployer wires the hook once before launch.
+Reversibility: immutable once launched; everything before launch is free to change.
+Owner action: Required before finalization.
+
 Use this template:
 
 ### D001: Short question
