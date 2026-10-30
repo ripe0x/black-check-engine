@@ -8,17 +8,16 @@ import {DeploySystem} from "./DeploySystem.sol";
 import {LaunchConfig} from "./LaunchConfig.sol";
 
 /// @notice Deploys the system with the launch values and runs the postflight. Simulation by default:
-///           COUNCIL=0x.. GUARDIAN=0x.. OPERATOR=0x.. LIQUIDITY=0x.. COIN_NAME=.. COIN_SYMBOL=.. \
+///           COUNCIL=0x.. GUARDIAN=0x.. OPERATOR=0x.. COIN_NAME=.. COIN_SYMBOL=.. \
 ///           forge script script/Deploy.s.sol --rpc-url https://mainnet.gateway.tenderly.co --sender <deployer>
 ///         Broadcasting additionally needs I_AM_THE_OWNER=yes and is not authorized by anything in this repository.
-///         Opening the FWA pool (the 50,000 FWA creation fee) and the coin venue are separate, later steps.
+///         Opening the FWA pool (the 50,000 FWA creation fee) and launching the coin market are separate, later steps.
 contract Deploy is Script, DeploySystem {
     function run() external returns (System memory s) {
         Config memory c = LaunchConfig.mainnet();
         c.council = vm.envAddress("COUNCIL");
         c.guardian = vm.envAddress("GUARDIAN");
         c.operator = vm.envAddress("OPERATOR");
-        c.coinRecipient = vm.envAddress("LIQUIDITY");
         c.coinName = vm.envString("COIN_NAME");
         c.coinSymbol = vm.envString("COIN_SYMBOL");
         require(keccak256(bytes(c.coinSymbol)) != keccak256("BLACK"), "placeholder ticker: choose a distinct public name");
@@ -29,7 +28,7 @@ contract Deploy is Script, DeploySystem {
 
         vm.startBroadcast();
         (, address deployer,) = vm.readCallers();
-        s = deploySystem(c, deployer);
+        s = deploySystem(c, deployer, CREATE2_FACTORY);
         vm.stopBroadcast();
         postflight(s, c, deployer);
         console2.log("timelock", address(s.timelock));
@@ -37,5 +36,7 @@ contract Deploy is Script, DeploySystem {
         console2.log("engine", address(s.engine));
         console2.log("controller", address(s.controller));
         console2.log("pool (predicted)", address(s.controller.pool()));
+        console2.log("venue liquidity", address(s.liquidity));
+        console2.log("venue hook", address(s.hook));
     }
 }

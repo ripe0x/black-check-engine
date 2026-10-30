@@ -10,12 +10,20 @@ import {IChecksOriginals, IChecksEdition} from "../src/interfaces/IChecks.sol";
 import {Engine, IShapesBacking, ICoinBurn} from "../src/core/Engine.sol";
 import {FwaV2Controller} from "../src/fwa/FwaV2Controller.sol";
 import {Coin} from "../src/token/Coin.sol";
+import {VenueLiquidity} from "../src/venue/VenueLiquidity.sol";
+import {VenueHook, IFundAcquisitions} from "../src/venue/VenueHook.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
 /// @notice The one deployment routine. Tests, the anvil rehearsal and any future mainnet script call `deploySystem`
 ///         and `postflight`; environments differ only in the `Config` values.
 /// @dev Creation order is fixed so the controller can be built with the engine proxy's address before the proxy
 ///      exists (the engine is initialized with the controller, the controller is immutable on the engine).
-///      `deployer` must be the account whose nonce the `new` calls use (the test contract, or the broadcaster).
+///      `deployer` must be the account whose nonce the `new` calls use (the test contract, or the broadcaster);
+///      `create2Deployer` is the account that executes `new{salt}` (the test contract, or forge's CREATE2 factory in a
+///      script). The coin is minted straight to the venue's liquidity contract, whose address is predicted.
+///      The market opens later, when the deployer calls `VenueLiquidity.launch(startTick)` once.
 abstract contract DeploySystem is CommonBase {
     struct Config {
         address council; // sole timelock proposer (Safe multisig in production)
@@ -31,7 +39,8 @@ abstract contract DeploySystem is CommonBase {
         string coinName;
         string coinSymbol;
         uint256 coinSupply;
-        address coinRecipient; // the venue's liquidity contract in production
+        IPoolManager poolManager; // Uniswap v4
+        uint256 venueFeeBps; // flat ETH fee on coin swaps, to acquisitions (D009)
         uint256[8] tierNotional;
         uint32[7] drawsToCompose;
         uint256[7] composeBurn;
@@ -45,11 +54,16 @@ abstract contract DeploySystem is CommonBase {
         Engine implementation;
         Engine engine;
         FwaV2Controller controller;
+        VenueLiquidity liquidity;
+        VenueHook hook;
     }
 
     error Postflight(string what);
 
-    function deploySystem(Config memory c, address deployer) internal returns (System memory s) {
+    function deploySystem(Config memory c, address deployer, address create2Deployer)
+        internal
+        returns (System memory s)
+    {
         address[] memory proposers = new address[](1);
         proposers[0] = c.council;
         address[] memory executors = new address[](1); // address(0): anyone executes once the delay has passed
@@ -57,7 +71,10 @@ abstract contract DeploySystem is CommonBase {
         s.timelock.grantRole(s.timelock.CANCELLER_ROLE(), c.guardian);
         s.timelock.renounceRole(s.timelock.DEFAULT_ADMIN_ROLE(), deployer);
 
-        s.coin = new Coin(c.coinName, c.coinSymbol, c.coinSupply, c.coinRecipient);
+        address liquidityPredicted = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
+        s.coin = new Coin(c.coinName, c.coinSymbol, c.coinSupply, liquidityPredicted);
+        s.liquidity = new VenueLiquidity(c.poolManager, address(s.coin));
+        if (address(s.liquidity) != liquidityPredicted) revert Postflight("liquidity address");
         s.implementation = new Engine(c.checks, c.editions, c.shapes, ICoinBurn(address(s.coin)));
         address enginePredicted = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
         s.controller =
@@ -86,7 +103,22 @@ abstract contract DeploySystem is CommonBase {
             )
         );
         if (address(s.engine) != enginePredicted) revert Postflight("engine address");
+
+        bytes memory args = abi.encode(
+            c.poolManager, address(s.coin), address(s.liquidity), IFundAcquisitions(address(s.engine)), c.venueFeeBps
+        );
+        (address hookPredicted, bytes32 salt) = HookMiner.find(create2Deployer, HOOK_FLAGS, type(VenueHook).creationCode, args);
+        s.hook = new VenueHook{salt: salt}(
+            c.poolManager, address(s.coin), address(s.liquidity), IFundAcquisitions(address(s.engine)), c.venueFeeBps
+        );
+        if (address(s.hook) != hookPredicted) revert Postflight("hook address");
+        s.liquidity.wire(address(s.hook));
     }
+
+    uint160 internal constant HOOK_FLAGS = uint160(
+        Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+            | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
+    );
 
     /// @notice Reverts unless the deployed system matches `c` and holds no deployer power.
     function postflight(System memory s, Config memory c, address deployer) internal view {
@@ -116,6 +148,14 @@ abstract contract DeploySystem is CommonBase {
         if (address(k.pool()) != c.fwaFactory.predictPoolAddress(address(k), c.poolSalt)) revert Postflight("pool address");
         if (c.fwaFactory.implementation() != c.fwaImplementation) revert Postflight("FWA implementation moved");
 
-        if (s.coin.totalSupply() != c.coinSupply || s.coin.balanceOf(c.coinRecipient) != c.coinSupply) revert Postflight("coin");
+        if (s.coin.totalSupply() != c.coinSupply || s.coin.balanceOf(address(s.liquidity)) != c.coinSupply) {
+            revert Postflight("coin");
+        }
+        // The deployer wired the hook once; check it is the honest one before anyone trades.
+        VenueHook h = s.hook;
+        if (h.engine() != IFundAcquisitions(address(e)) || h.launcher() != address(s.liquidity)) revert Postflight("hook wiring");
+        if (h.token() != address(s.coin) || h.feeBps() != c.venueFeeBps) revert Postflight("hook terms");
+        if (s.liquidity.hook() != address(h) || s.liquidity.token() != address(s.coin)) revert Postflight("liquidity wiring");
+        if (s.liquidity.launched() || s.liquidity.deployer() != deployer) revert Postflight("liquidity state");
     }
 }

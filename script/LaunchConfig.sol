@@ -4,10 +4,11 @@ pragma solidity 0.8.28;
 import {DeploySystem} from "./DeploySystem.sol";
 import {Engine, IShapesBacking} from "../src/core/Engine.sol";
 import {IFWAFactory} from "../src/interfaces/IFWA.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IChecksOriginals, IChecksEdition} from "../src/interfaces/IChecks.sol";
 
-/// @notice Launch values only (docs/ECONOMICS.md proposals; every economic value awaits founder review). Roles, the
-///         coin's public name and the liquidity recipient are deliberately unset: the deploy script and postflight
+/// @notice Launch values only (docs/ECONOMICS.md proposals; every economic value awaits founder review). Roles and the
+///         coin's public name are deliberately unset: the deploy script and postflight
 ///         refuse to run without them.
 library LaunchConfig {
     function mainnet() internal pure returns (DeploySystem.Config memory c) {
@@ -21,6 +22,8 @@ library LaunchConfig {
         c.coinName = "Placeholder Coin";
         c.coinSymbol = "BLACK"; // placeholder: the mainnet script refuses it (CLAUDE.md invariant 9)
         c.coinSupply = 1_000_000_000 ether;
+        c.poolManager = IPoolManager(0x000000000004444c5dc75cB358380D2e3dE08A90); // Uniswap v4 PoolManager
+        c.venueFeeBps = 100; // 1% placeholder (D009)
         // 80-Check floor 0.25 ETH (late October 2026) x units, no rarity premium; Black = 4,096 units.
         c.tierNotional = [uint256(0.25 ether), 0.5 ether, 1 ether, 2 ether, 4 ether, 8 ether, 16 ether, 1024 ether];
         c.drawsToCompose = [uint32(100), 100, 100, 100, 100, 100, 200];
