@@ -51,7 +51,7 @@ contract Engine is Initializable, UUPSUpgradeable {
         uint32 graceDraws; // draws past the threshold after which composition is free and deterministic
         uint16 buyoutMarkupBps; // ETH buyout = schedule x (1 + markup), >= 1,000
         uint16 bidBps; // standing bid = schedule x bid, <= 10,000
-        uint128 bidWeeklyCap; // ETH the bid may spend per week
+        uint128 bidWeeklyCap; // ETH the bid may spend per calendar week (epoch-aligned: up to 2x across a boundary)
     }
 
     address public timelock;

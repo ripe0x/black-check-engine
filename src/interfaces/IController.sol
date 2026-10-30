@@ -4,7 +4,9 @@ pragma solidity 0.8.28;
 /// @notice What the engine needs from the controller of one draw pool. One implementation per FWA version; each
 ///         controller permanently owns exactly one pool and acts only for the engine. A new FWA version means a new
 ///         controller approved through the timelock, and the council's review of its code is the security boundary:
-///         the engine hands it the NFTs it lists.
+///         the engine hands it the NFTs it lists. Survival correctness also rests on the controller: every listing it
+///         reports must be live at once (never staged), and `survived` must count only prize allocations made while
+///         the listing stayed listed (FwaV2Controller: listed - withdrawn - activeListingCount, C010).
 interface IController {
     /// @notice Creates the pool this controller owns. Fails if the pool already exists.
     function open() external;
