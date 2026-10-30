@@ -170,6 +170,8 @@ seeded ETH, early sellers can only sell what was bought.
 Action taken: `src/venue/VenueLiquidity.sol`, `src/venue/VenueHook.sol`, `test/fork/Venue.t.sol` (8 pass on the real
 PoolManager, a real Engine behind its proxy credited through `fundAcquisitions`). Not yet in `DeploySystem`; when it
 is, postflight must check the hook's engine, launcher and fee, since the deployer wires the hook once before launch.
+Update after review: the opening tick is fixed in `VenueLiquidity`'s constructor and checked by postflight, so
+the deployer chooses only when to open, not the price.
 Reversibility: immutable once launched; everything before launch is free to change.
 Owner action: Required before finalization.
 
@@ -184,7 +186,8 @@ an immutable `Burner`, which anyone can trigger once a day to buy at most `maxPe
 (b) a TWAP-checked swap (needs an oracle hook); (c) no buyback until an oracle exists.
 Recommended choice: (a). A sandwich can skim part of one capped chunk per day; that is the bounded cost of having
 no oracle. The burner and reserve are timelock-set; the burner has no owner and no exit but the swap.
-Tradeoff: slow burns (0.1 ETH a day in tests; a launch value is a founder choice) and some MEV leakage.
+Tradeoff: slow burns (0.1 ETH a day in tests; a launch value is a founder choice) and MEV leakage of up to one
+whole chunk per interval in the worst case.
 Action taken: `src/treasury/Burner.sol`, `Engine.releaseSurplus`, `setBurner`; `test/fork/Deploy.t.sol`
 `test_surplusBuysAndBurnsCoin` on the real venue.
 Reversibility: the burner can be replaced through the timelock.

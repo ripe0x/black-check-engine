@@ -100,7 +100,7 @@ contract VenueForkTest is ForkBase {
         super.setUp();
         coin = new Coin("Placeholder Coin", "BLACK", SUPPLY, address(this));
         engine = _deployEngine();
-        liq = new VenueLiquidity(PM, address(coin)); // deployer = this test contract
+        liq = new VenueLiquidity(PM, address(coin), START_TICK); // deployer = this test contract
         hook = _mineAndDeployHook();
         liq.wire(address(hook));
         coin.transfer(address(liq), SUPPLY);
@@ -164,7 +164,7 @@ contract VenueForkTest is ForkBase {
     }
 
     function openMarket() internal {
-        liq.launch(START_TICK);
+        liq.launch();
     }
 
     function buyCoin(address who, uint256 eth) internal returns (uint256 out) {
@@ -196,19 +196,26 @@ contract VenueForkTest is ForkBase {
         assertApproxEqRel(coinsPerEth, 10_011_000, 2e16, "~10M coins per ETH");
         // launch is one-shot
         vm.expectRevert(VenueLiquidity.AlreadyLaunched.selector);
-        liq.launch(START_TICK);
+        liq.launch();
     }
 
     function test_launchOnlyDeployerAndRefusesEth() public {
         vm.prank(trader);
         vm.expectRevert(VenueLiquidity.NotDeployer.selector);
-        liq.launch(START_TICK);
+        liq.launch();
         // not payable: ETH sent with launch is rejected
         vm.deal(address(this), 2 ether);
-        (bool ok,) = address(liq).call{value: 2 ether}(abi.encodeCall(VenueLiquidity.launch, (START_TICK)));
+        (bool ok,) = address(liq).call{value: 2 ether}(abi.encodeCall(VenueLiquidity.launch, ()));
         assertFalse(ok, "launch is not payable");
         openMarket();
         assertEq(address(liq).balance, 0);
+        assertEq(liq.startTick(), START_TICK, "opening price fixed at construction");
+    }
+
+    /// Review finding: the opening price cannot be chosen at launch time; a bad tick fails at construction.
+    function test_badStartTickRefusedAtConstruction() public {
+        vm.expectRevert(VenueLiquidity.BadTick.selector);
+        new VenueLiquidity(PM, address(coin), 161_201);
     }
 
     function test_buyRoutesFlatFeeInEthToHook() public {

@@ -23,7 +23,7 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 ///      `deployer` must be the account whose nonce the `new` calls use (the test contract, or the broadcaster);
 ///      `create2Deployer` is the account that executes `new{salt}` (the test contract, or forge's CREATE2 factory in a
 ///      script). The coin is minted straight to the venue's liquidity contract, whose address is predicted.
-///      The market opens later, when the deployer calls `VenueLiquidity.launch(startTick)` once.
+///      The market opens later, when the deployer calls `VenueLiquidity.launch()` once, at the price fixed here.
 abstract contract DeploySystem is CommonBase {
     struct Config {
         address council; // sole timelock proposer (Safe multisig in production)
@@ -41,6 +41,7 @@ abstract contract DeploySystem is CommonBase {
         uint256 coinSupply;
         IPoolManager poolManager; // Uniswap v4
         uint256 venueFeeBps; // flat ETH fee on coin swaps, to acquisitions (D009)
+        int24 venueStartTick; // opening price, fixed in the venue at deployment (D009)
         uint256[8] tierNotional;
         uint32[7] drawsToCompose;
         uint256[7] composeBurn;
@@ -73,7 +74,7 @@ abstract contract DeploySystem is CommonBase {
 
         address liquidityPredicted = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
         s.coin = new Coin(c.coinName, c.coinSymbol, c.coinSupply, liquidityPredicted);
-        s.liquidity = new VenueLiquidity(c.poolManager, address(s.coin));
+        s.liquidity = new VenueLiquidity(c.poolManager, address(s.coin), c.venueStartTick);
         if (address(s.liquidity) != liquidityPredicted) revert Postflight("liquidity address");
         s.implementation = new Engine(c.checks, c.editions, c.shapes, ICoinBurn(address(s.coin)));
         address enginePredicted = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
@@ -157,5 +158,6 @@ abstract contract DeploySystem is CommonBase {
         if (h.token() != address(s.coin) || h.feeBps() != c.venueFeeBps) revert Postflight("hook terms");
         if (s.liquidity.hook() != address(h) || s.liquidity.token() != address(s.coin)) revert Postflight("liquidity wiring");
         if (s.liquidity.launched() || s.liquidity.deployer() != deployer) revert Postflight("liquidity state");
+        if (s.liquidity.startTick() != c.venueStartTick) revert Postflight("opening price");
     }
 }

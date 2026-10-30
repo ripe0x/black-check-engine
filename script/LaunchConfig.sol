@@ -24,6 +24,7 @@ library LaunchConfig {
         c.coinSupply = 1_000_000_000 ether;
         c.poolManager = IPoolManager(0x000000000004444c5dc75cB358380D2e3dE08A90); // Uniswap v4 PoolManager
         c.venueFeeBps = 100; // 1% placeholder (D009)
+        c.venueStartTick = 161_200; // about 100 ETH fully diluted at launch; placeholder (D009)
         // 80-Check floor 0.25 ETH (late October 2026) x units, no rarity premium; Black = 4,096 units.
         c.tierNotional = [uint256(0.25 ether), 0.5 ether, 1 ether, 2 ether, 4 ether, 8 ether, 16 ether, 1024 ether];
         c.drawsToCompose = [uint32(100), 100, 100, 100, 100, 100, 200];

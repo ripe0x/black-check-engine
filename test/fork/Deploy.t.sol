@@ -6,7 +6,7 @@ import {DeploySystem} from "../../script/DeploySystem.sol";
 import {LaunchConfig} from "../../script/LaunchConfig.sol";
 import {Swapper} from "./Venue.t.sol";
 import {FwaFeeBuyer} from "../../src/periphery/FwaFeeBuyer.sol";
-import {Burner} from "../../src/treasury/Burner.sol";
+import {Burner, IVenue} from "../../src/treasury/Burner.sol";
 import {Engine} from "../../src/core/Engine.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
@@ -44,7 +44,7 @@ contract DeployTest is ForkBase, DeploySystem {
         Config memory c = _config();
         System memory s = deploySystem(c, address(this), address(this));
         postflight(s, c, address(this));
-        s.liquidity.launch(161_200);
+        s.liquidity.launch();
         Swapper swapper = new Swapper(c.poolManager, s.liquidity.poolKey());
 
         address trader = makeAddr("trader");
@@ -91,8 +91,8 @@ contract DeployTest is ForkBase, DeploySystem {
     function test_surplusBuysAndBurnsCoin() public {
         Config memory c = _config();
         System memory s = deploySystem(c, address(this), address(this));
-        s.liquidity.launch(161_200);
-        Burner burner = new Burner(c.poolManager, s.liquidity.poolKey(), 0.1 ether, 1 days);
+        s.liquidity.launch();
+        Burner burner = new Burner(IVenue(address(s.liquidity)), 0.1 ether, 1 days);
 
         bytes memory data = abi.encodeCall(Engine.setBurner, (address(burner), uint128(0.5 ether)));
         vm.prank(c.council);

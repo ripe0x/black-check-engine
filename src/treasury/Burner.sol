@@ -9,6 +9,11 @@ import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
+interface IVenue {
+    function poolKey() external view returns (PoolKey memory);
+    function poolManager() external view returns (IPoolManager);
+}
+
 interface IBurnableCoin {
     function burn(uint256 amount) external;
     function balanceOf(address) external view returns (uint256);
@@ -17,11 +22,13 @@ interface IBurnableCoin {
 /// @notice Turns game surplus into permanently burned coin. Holds ETH the engine releases; anyone may call `burn` at
 ///         most once per `interval`, which buys coin on the venue with at most `maxPerBurn` ETH and burns all of it.
 /// @dev No owner and no exits other than the swap: the coin it buys is burned in the same call, and ETH only leaves
-///      into the PoolManager. Without a trusted price, a sandwich around a buy can skim part of that one chunk; the
-///      chunk cap and the interval bound what any one block can lose. The pool key is read from the venue at
-///      construction and fixed.
+///      into the PoolManager. Without a trusted price there is no minimum output, so a sandwich around a buy can take
+///      up to that whole chunk; the chunk cap and the interval bound what one interval can lose (D010). The pool
+///      manager and key are read from the venue contract at construction, so a burner cannot be built against
+///      another pool; the council checks `venue` when it approves `Engine.setBurner`.
 contract Burner is IUnlockCallback {
     IPoolManager public immutable poolManager;
+    address public immutable venue;
     IBurnableCoin public immutable coin;
     uint256 public immutable maxPerBurn;
     uint256 public immutable interval;
@@ -37,10 +44,11 @@ contract Burner is IUnlockCallback {
     error Nothing();
     error NotPoolManager();
 
-    constructor(IPoolManager manager, PoolKey memory key_, uint256 maxPerBurn_, uint256 interval_) {
-        poolManager = manager;
-        key = key_;
-        coin = IBurnableCoin(Currency.unwrap(key_.currency1));
+    constructor(IVenue venue_, uint256 maxPerBurn_, uint256 interval_) {
+        venue = address(venue_);
+        poolManager = venue_.poolManager();
+        key = venue_.poolKey();
+        coin = IBurnableCoin(Currency.unwrap(key.currency1));
         maxPerBurn = maxPerBurn_;
         interval = interval_;
     }

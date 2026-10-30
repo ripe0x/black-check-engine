@@ -22,7 +22,7 @@ interface IBurnable {
 ///         function that removes liquidity, collects or transfers anything out, and no owner: once launched the whole
 ///         coin supply is locked in the pool forever. The pool's LP fee is 0 (VenueHook's ETH fee is the only fee), so
 ///         the position earns nothing to collect.
-/// @dev `launch(startTick)` (the deployer, once) initialises the pool at `startTick` (coin per ETH) and adds every coin
+/// @dev `launch()` (the deployer, once) initialises the pool at `startTick` (coin per ETH) and adds every coin
 ///      this contract holds as one single-sided position over `[TICK_LOWER, startTick)`: as buyers pay ETH the price
 ///      moves down through it and the position becomes ETH-paired. No ETH is needed and none is accepted (not payable),
 ///      so the price can never return above `startTick` and no ETH is ever placed where a seller or a withdrawal could
@@ -42,7 +42,8 @@ contract VenueLiquidity is IUnlockCallback, ReentrancyGuard {
 
     address public hook;
     bool public launched;
-    int24 public startTick;
+    /// @notice The opening price (coin per ETH), fixed at construction so the deployer chooses only when to open.
+    int24 public immutable startTick;
     uint128 public coinLiquidity;
 
     event Launched(int24 startTick, uint256 coins, uint128 coinLiquidity);
@@ -56,10 +57,15 @@ contract VenueLiquidity is IUnlockCallback, ReentrancyGuard {
     error NotWired();
     error BadTick();
 
-    constructor(IPoolManager manager, address token_) {
+    constructor(IPoolManager manager, address token_, int24 startTick_) {
         if (address(manager) == address(0) || token_ == address(0)) revert ZeroAddress();
+        if (
+            startTick_ % TICK_SPACING != 0 || startTick_ <= TICK_LOWER + TICK_SPACING
+                || startTick_ >= TICK_UPPER - TICK_SPACING
+        ) revert BadTick();
         poolManager = manager;
         token = token_;
+        startTick = startTick_;
         deployer = msg.sender;
     }
 
@@ -82,26 +88,21 @@ contract VenueLiquidity is IUnlockCallback, ReentrancyGuard {
         });
     }
 
-    /// @notice Opens the market. Deployer, once. `startTick` sets the opening price (coin per ETH) and the opening
-    ///         valuation: supply / (coins per ETH). Not payable: no ETH is seeded.
-    function launch(int24 startTick_) external nonReentrant {
+    /// @notice Opens the market at the constructor's `startTick`. Deployer, once. The opening valuation is
+    ///         supply / (coins per ETH at `startTick`). Not payable: no ETH is seeded.
+    function launch() external nonReentrant {
         if (msg.sender != deployer) revert NotDeployer();
         if (hook == address(0)) revert NotWired();
         if (launched) revert AlreadyLaunched();
-        if (
-            startTick_ % TICK_SPACING != 0 || startTick_ <= TICK_LOWER + TICK_SPACING
-                || startTick_ >= TICK_UPPER - TICK_SPACING
-        ) revert BadTick();
         launched = true;
-        startTick = startTick_;
-        uint160 price = TickMath.getSqrtPriceAtTick(startTick_);
+        uint160 price = TickMath.getSqrtPriceAtTick(startTick);
         poolManager.initialize(poolKey(), price);
         uint256 coins = SafeTransferLib.balanceOf(token, address(this));
         coinLiquidity = LiquidityAmounts.getLiquidityForAmount1(TickMath.getSqrtPriceAtTick(TICK_LOWER), price, coins);
         poolManager.unlock("");
         uint256 dust = SafeTransferLib.balanceOf(token, address(this));
         if (dust != 0) IBurnable(token).burn(dust);
-        emit Launched(startTick_, coins - dust, coinLiquidity);
+        emit Launched(startTick, coins - dust, coinLiquidity);
     }
 
     function unlockCallback(bytes calldata) external returns (bytes memory) {
