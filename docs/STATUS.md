@@ -1,7 +1,7 @@
 # Current execution status
 
-Stage: Phase 5. Founder decisions 1-6 answered 2026-10-30 (recommendations accepted; venue fee and opening tick
-stay placeholders). Release candidate being frozen.
+Stage: Phase 5. Release candidate `rc1` (commit 0aeea0e, local tag) frozen and verified
+(docs/receipts/rc1-verification.md). Ready for an independent audit; not deployable until the gates below close.
 Branch: `dev` (local). Latest milestone commit: see `git log`.
 
 ## Pinned environment
@@ -58,6 +58,13 @@ Branch: `dev` (local). Latest milestone commit: see `git log`.
 ## Current blockers
 None.
 
+## Release candidate rc1 (0aeea0e)
+- Founder decisions 1-6 approved 2026-10-30. Pre-candidate review (docs/review/rc-repairs-review.md): no bug, four
+  risks fixed (Burner launch and zero-chunk guards, postflight refuses tick 0, view consistency), one documented.
+- Evidence, each run once on the frozen tree: full suite 55/55; strict invariants 32 x 100, 3,200 calls, 0 reverts;
+  Slither triaged, no change; deploy simulation with postflight; local rehearsal; keeper 7/7; site typecheck and
+  build. Commands and limits: docs/receipts/rc1-verification.md.
+
 ## Completed since the last status block
 - Keeper (406262c), site (2b17567), audit scope draft (23e32f7), third independent review and its fixes (b608e19:
   opening tick fixed at venue construction, burner reads its pool from the venue), founder review document.
@@ -65,9 +72,11 @@ None.
   (8 x 40) hold; `node --test keeper/test/policy.test.mjs` 7/7; site `tsc --noEmit` passes.
 
 ## Next executable action
-Freeze the release candidate (local tag), run each broad check once with CANDIDATE_RUN=1, record the evidence, and
-hand the frozen commit to the audit (docs/AUDIT_SCOPE.md). Before any mainnet deployment: final venue fee and opening
-tick, name and ticker, council, and the timelock-settable placeholders listed in docs/FOUNDER_REVIEW.md.
+Hand `rc1` (0aeea0e) and docs/AUDIT_SCOPE.md to an independent auditor (owner's choice of auditor and budget). Audit
+findings get fixed on `dev`, affected checks repeated, and a new tag frozen. Before any mainnet deployment: final
+venue fee and opening tick, name and ticker, council and guardian keys, legal review, keeper pay, and the
+timelock-settable placeholders in docs/FOUNDER_REVIEW.md. Deployment, the FWA fee purchase and the coin launch need
+explicit owner authorization.
 
 ## Incidents
 - 2026-10-30: during a rehearsal the lead stopped an anvil process on port 8548 that it had not started (forked near

@@ -1,17 +1,17 @@
-# Audit scope (draft for Phase 5)
+# Audit scope
 
-Not audited. Not deployed. This file is the starting package for an independent audit, prepared from commit
-2b17567 on branch `dev`; the candidate commit will be frozen in Phase 5.
+Not audited. Not deployed. **Frozen candidate: local tag `rc1`, commit 0aeea0e, branch `dev`.** Verification at
+that commit: docs/receipts/rc1-verification.md.
 
-## In scope (1,537 lines of Solidity)
+## In scope (1,569 lines of Solidity)
 
 | File | Lines | Role |
 | --- | --- | --- |
-| src/core/Engine.sol | 636 | UUPS custody and lifecycle: listing, decay, composition, buyouts, standing bid, Shape restock, surplus release, migration, roles |
+| src/core/Engine.sol | 654 | UUPS custody and lifecycle: listing, decay, composition, buyouts, standing bid, Shape restock, surplus release, migration, roles |
 | src/fwa/FwaV2Controller.sol | 180 | Immutable owner of one FWA V2 pool; O(1) survival derivation (C010) |
 | src/venue/VenueHook.sol | 146 | Uniswap v4 hook: flat ETH fee to acquisitions |
-| src/venue/VenueLiquidity.sol | 129 | Locks the whole coin supply as single-sided v4 liquidity |
-| src/treasury/Burner.sol | 75 | Ownerless capped buy-and-burn of released surplus |
+| src/venue/VenueLiquidity.sol | 130 | Locks the whole coin supply as single-sided v4 liquidity |
+| src/treasury/Burner.sol | 88 | Ownerless capped buy-and-burn of released surplus |
 | src/periphery/FwaFeeBuyer.sol | 58 | Buys FWA's pool-creation fee with ETH (deployment helper) |
 | src/token/Coin.sol | 37 | Fixed-supply ERC20 with burnFrom |
 | src/interfaces/*.sol | 276 | Interfaces to FWA, Checks and controllers |
@@ -50,6 +50,10 @@ should try to break:
 - The weekly bid cap is epoch-aligned (up to 2× across a boundary), bounded by the budget.
 - Keepers are unpaid. NFTs sent to the engine directly are quarantined (no sweep, and keepers do not see them).
 - Opening fee curve against launch snipers is not implemented (D009).
+- The venue fee (1%) and opening tick (161,200) in `LaunchConfig` are placeholders the founder will finalise before
+  deployment; both are immutable once deployed. Compose coin burns, coin buyout prices (0, disabled), bid cap and
+  burner values are timelock-settable placeholders.
+- Approving a burner trusts the council's check that `Burner.venue()` is the canonical venue.
 
 ## Reproducing the evidence
 
@@ -63,5 +67,6 @@ FOUNDRY_INVARIANT_FAIL_ON_REVERT=true FOUNDRY_INVARIANT_RUNS=16 FOUNDRY_INVARIAN
 python3 sim/model.py
 ```
 
-Prior reviews: docs/review/phase2-security-review.md, docs/review/phase4-security-review.md (independent model-based
-reviews, not audits).
+Prior reviews (independent model-based reviews, not audits): docs/review/phase2-security-review.md,
+docs/review/phase4-security-review.md, docs/review/venue-burner-deploy-review.md, docs/review/rc-repairs-review.md.
+Static analysis: docs/review/slither-triage.md.
