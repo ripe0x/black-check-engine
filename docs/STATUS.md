@@ -1,7 +1,7 @@
 # Current execution status
 
-Stage: Phase 4 in progress. Contracts, coin venue and the single deployment path are built, fork-tested and
-independently reviewed (no Critical/High). Remaining for Phase 4: minimal UI (site/, built; a 375px overflow fix is in progress before commit).
+Stage: Phase 4 complete (built, fork-tested, independently reviewed). Phase 5 prepared up to the founder
+decisions in docs/FOUNDER_REVIEW.md; the release candidate freeze waits on them.
 Branch: `dev` (local). Latest milestone commit: see `git log`.
 
 ## Pinned environment
