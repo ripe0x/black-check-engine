@@ -1,7 +1,7 @@
 # Current execution status
 
 Stage: Phase 4 in progress. Contracts, coin venue and the single deployment path are built, fork-tested and
-independently reviewed (no Critical/High). Remaining for Phase 4: keeper, minimal UI, stateful invariant test.
+independently reviewed (no Critical/High). Remaining for Phase 4: keeper and minimal UI (both being built by delegated builders in keeper/ and site/).
 Branch: `dev` (local). Latest milestone commit: see `git log`.
 
 ## Pinned environment
@@ -39,6 +39,9 @@ Branch: `dev` (local). Latest milestone commit: see `git log`.
   Lifecycle 5, BlackCheck 3, Editions 1, Custody 10, Migration 3, Market 10). Deploy.t.sol: 2 passed (83a0d72).
 - `forge test --match-path 'test/fork/*.t.sol'` (5771132 + fee route): 47 passed, 0 failed (adds Venue 8, Deploy 4).
   `forge test --match-path test/unit/Decay.t.sol`: 2 fuzz tests, 256 runs each, pass.
+- Surplus burner (47b9521): Deploy.t.sol 5/5; all fork files 48/48.
+- Invariants (144aec5): `FOUNDRY_INVARIANT_FAIL_ON_REVERT=true FOUNDRY_INVARIANT_RUNS=16 FOUNDRY_INVARIANT_DEPTH=60
+  forge test --match-path test/fork/Invariant.t.sol`: 4/4 hold, 960 calls, 0 handler reverts.
 - `forge script script/Deploy.s.sol` simulated on the pinned fork with placeholder role addresses, including the
   venue: success, postflight passed. Nothing broadcast. Buying the FWA creation fee costs 0.1303 ETH at the block.
 - `python3 sim/model.py`: 17 scenarios x 60 seeded runs, results in sim/results/phase3.md (model, not evidence). Real mainnet contracts; setup cheats listed in docs/RISKS.md
@@ -51,9 +54,9 @@ Branch: `dev` (local). Latest milestone commit: see `git log`.
 None.
 
 ## Next executable action
-Keeper (permissionless maintenance: process FWA queue, reprice, list, restock Shapes, fallback compose, forward
-venue fees, collect proceeds, release surplus, burn); then a minimal mobile UI; then a stateful invariant test of
-custody accounting. Burner deployment and `setBurner` are a post-deploy timelock step (not in DeploySystem yet).
+Integrate the keeper and site builds (review, verify, commit); then the Phase 4 boundary review (spec, status,
+roadmap) and Phase 5 launch-readiness work: audit package, anvil rehearsal script, residual risk register, grouped
+founder review. Burner deployment and `setBurner` are a post-deploy timelock step (not in DeploySystem yet).
 
 ## Open items (not yet built)
 - Keepers are unpaid; maintenance relies on the operator or volunteers.
