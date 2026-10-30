@@ -42,6 +42,27 @@ Action taken: `src/game/SurvivalCursor.sol`, fork-tested in `test/fork/Lifecycle
 Reversibility: one condition in `advance`.
 Owner action: Optional review.
 
+### D003: Price listings from a timelocked tier schedule instead of signed market quotes
+Status: REVIEW
+Importance: High
+Why it came up: Phase 2 custody design. There is no trustless onchain price for a Check. The spec's PricingGuard
+(two signers attesting market quotes) adds a new trusted party and an offchain service, and a signer pair that
+colludes with a player can still list a rare Check cheaply and win it.
+Desired outcome: no owner, keeper or signer can make a valuable Check cheap to win; notionals still follow the market
+over time.
+Options considered: (a) a per-tier notional schedule that only the timelock (council + 7 days) can change, with
+decay applied by rule from verified draws; (b) signer-attested quotes with expiry (spec); (c) acquisition cost as the
+only anchor (fails for composites and appreciation).
+Recommended choice: (a). Every Check at a tier lists at the same published notional; Shapes list at their exact
+backing. Market moves reach the schedule through a public 7-day proposal, and the guardian can halt draws if the
+market jumps faster than that.
+Tradeoff: notionals lag the market by at least 7 days; a sharp Checks rally underprices prizes until the schedule
+moves (subsidy risk, to be sized in Phase 3). Individual Checks with special art are priced as their tier.
+Action taken: `Engine.tierNotional`, `setSchedule` (timelock only), `listChecks`/`listShapes` take no price;
+`test/fork/Custody.t.sol` A6.
+Reversibility: an engine upgrade could add a quote path later.
+Owner action: Required before finalization.
+
 Use this template:
 
 ### D001: Short question
@@ -78,6 +99,13 @@ Record important noncontroversial implementation choices with evidence and commi
 - C006 Players buy directly from FWA (`acquire`/`acquireBatch`); no protocol draw router, so there is no router to
   bypass. A purchase operator is not needed for pausing. Revisit only if a gate on in-flight requests is required.
 - C007 Newly migrated Originals are listed only after their epoch is revealed (51 blocks after mint). Evidence: E7.
+- C008 Governance from stock parts: OpenZeppelin `TimelockController` (council the only proposer, guardian an
+  extra canceller, open execution, self-administered, 7-day delay) and an ERC1967/UUPS engine whose upgrades, role
+  changes, schedule and controller changes are timelock-only. Operator powers: halt only. Guardian: halt, resume,
+  cancel. Evidence: `test/fork/Custody.t.sol`.
+- C009 One upgradeable `Engine` holds custody and lifecycle (vault and engine merged). Splitting them would not
+  reduce trust, since an upgrade of either could move assets. Per-pool `FwaV2Controller`s stay immutable because FWA
+  pool ownership is permanent and one pool per address. Evidence: `test/fork/Migration.t.sol`.
 
 ## FOUNDATIONAL COMMITMENTS
 Follow the constraints in CLAUDE.md. If a real technical constraint conflicts with one, document it and recommend the simplest alternative while advancing independent work.

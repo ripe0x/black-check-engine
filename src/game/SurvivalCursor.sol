@@ -16,7 +16,7 @@ import {IFWAPool} from "../interfaces/IFWA.sol";
 ///      a new listing ID and a new episode.
 contract SurvivalCursor {
     IFWAPool public immutable pool;
-    /// @notice The only address that records new episodes (the pool's controller, which lists inside the same call).
+    /// @notice The only external caller of `startEpisode` (zero when an inheriting controller records internally).
     address public immutable recorder;
 
     /// @notice Last sequence counted.
@@ -41,7 +41,7 @@ contract SurvivalCursor {
     }
 
     /// @notice Counts up to `maxCount` processed sequences. Permissionless and idempotent.
-    function advance(uint256 maxCount) public returns (uint256 counted) {
+    function advance(uint256 maxCount) public virtual returns (uint256 counted) {
         uint64 processedThrough = pool.nextSequenceToProcess() - 1;
         uint64 c = cursor;
         uint64 a = allocated;
@@ -61,9 +61,18 @@ contract SurvivalCursor {
         }
     }
 
+    /// @notice True when every processed sequence has been counted.
+    function caughtUp() public view virtual returns (bool) {
+        return cursor == pool.nextSequenceToProcess() - 1;
+    }
+
     /// @notice Starts the survival episode of a listing the recorder has just activated.
     function startEpisode(uint256 listingId) external {
         if (msg.sender != recorder) revert NotRecorder();
+        _startEpisode(listingId);
+    }
+
+    function _startEpisode(uint256 listingId) internal {
         if (pool.unsettledAcquisitionCount() != 0 || cursor != pool.lastIssuedSequence()) revert NotCaughtUp();
         (,,,,,,, IFWAPool.ListingStatus status) = pool.listings(listingId);
         if (status != IFWAPool.ListingStatus.Active) revert NotActive();
@@ -73,7 +82,7 @@ contract SurvivalCursor {
     }
 
     /// @notice Allocating draws this listing has survived, through `cursor`. Zero once it is no longer Active.
-    function survived(uint256 listingId) external view returns (uint256) {
+    function survived(uint256 listingId) public view virtual returns (uint256) {
         uint64 e = entryPlusOne[listingId];
         if (e == 0) revert NoEpisode();
         (,,,,,,, IFWAPool.ListingStatus status) = pool.listings(listingId);
