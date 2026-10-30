@@ -1,0 +1,27 @@
+{
+  "name": "checks-survival-site",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "abi": "node scripts/abi.mjs",
+    "predev": "node scripts/abi.mjs",
+    "prebuild": "node scripts/abi.mjs",
+    "dev": "next dev",
+    "build": "next build",
+    "typecheck": "node scripts/abi.mjs && tsc --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.101.4",
+    "next": "16.3.3",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "viem": "2.55.18",
+    "wagmi": "2.19.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3"
+  }
+}
