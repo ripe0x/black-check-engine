@@ -1,7 +1,7 @@
 # Current execution status
 
 Stage: Phase 4 in progress. Contracts, coin venue and the single deployment path are built, fork-tested and
-independently reviewed (no Critical/High). Remaining for Phase 4: keeper and minimal UI (both being built by delegated builders in keeper/ and site/).
+independently reviewed (no Critical/High). Remaining for Phase 4: minimal UI (site/, built; a 375px overflow fix is in progress before commit).
 Branch: `dev` (local). Latest milestone commit: see `git log`.
 
 ## Pinned environment
@@ -40,6 +40,11 @@ Branch: `dev` (local). Latest milestone commit: see `git log`.
 - `forge test --match-path 'test/fork/*.t.sol'` (5771132 + fee route): 47 passed, 0 failed (adds Venue 8, Deploy 4).
   `forge test --match-path test/unit/Decay.t.sol`: 2 fuzz tests, 256 runs each, pass.
 - Surplus burner (47b9521): Deploy.t.sol 5/5; all fork files 48/48.
+- Keeper (406262c): `node --test keeper/test/policy.test.mjs` 7/7. Local rehearsal
+  `forge script script/Rehearse.s.sol --rpc-url http://127.0.0.1:8561 --broadcast --unlocked` on the lead's own anvil
+  fork (block 26,302,000 verified before broadcast, anvil development accounts on localhost only): success,
+  postflight passed. The keeper builder's live rehearsal covered `listChecks` and `forward`; other jobs are
+  unit-tested and their contract paths fork-tested.
 - Invariants (144aec5): `FOUNDRY_INVARIANT_FAIL_ON_REVERT=true FOUNDRY_INVARIANT_RUNS=16 FOUNDRY_INVARIANT_DEPTH=60
   forge test --match-path test/fork/Invariant.t.sol`: 4/4 hold, 960 calls, 0 handler reverts.
 - `forge script script/Deploy.s.sol` simulated on the pinned fork with placeholder role addresses, including the
@@ -57,6 +62,14 @@ None.
 Integrate the keeper and site builds (review, verify, commit); then the Phase 4 boundary review (spec, status,
 roadmap) and Phase 5 launch-readiness work: audit package, anvil rehearsal script, residual risk register, grouped
 founder review. Burner deployment and `setBurner` are a post-deploy timelock step (not in DeploySystem yet).
+
+## Incidents
+- 2026-10-30: during a rehearsal the lead stopped an anvil process on port 8548 that it had not started (forked near
+  block 26,286,12x; owned by some other local session or tool, not by either builder). The lead's own anvil had
+  failed to bind to that port, so one rehearsal also broadcast test deployments onto that foreign local node before
+  it was stopped. Local test node only: no mainnet effect, nothing spent. The rehearsal was redone on a verified
+  free port. Rule kept since: check the port is free and the node's block before broadcasting; stop only a PID this
+  session started.
 
 ## Open items (not yet built)
 - Keepers are unpaid; maintenance relies on the operator or volunteers.
