@@ -63,6 +63,39 @@ Action taken: `Engine.tierNotional`, `setSchedule` (timelock only), `listChecks`
 Reversibility: an engine upgrade could add a quote path later.
 Owner action: Required before finalization.
 
+### D004: List Shapes at backing + 10%, not exact backing
+Status: REVIEW
+Importance: Medium
+Why it came up: Phase 3 model (`sim/model.py`). Replacing a won Shape costs its backing plus the 0.001 ETH Shapes
+mint fee, 10% on a 0.01 ETH Shape, while the owner keeps only 2.5% over the harmonic mean per draw.
+Desired outcome: Shapes are honest filler prizes whose replacement the game pays for itself.
+Options considered: (a) notional = backing × (1 + markup), markup timelocked, default 10%; (b) exact backing (Phase 2
+code), operating P&L −12 ETH over two years in the base case; (c) drop small Shapes and keep only ≥ 0.05 ETH ones,
+fewer cheap prizes and faster Check turnover.
+Recommended choice: (a). Base-case operating P&L +13 ETH. Players still win redeemable ETH; a Shape's expected value
+to a player is 1/1.155 of its share of the fee instead of 1/1.05.
+Tradeoff: Shape draws are slightly worse for players.
+Action taken: modelled; engine change follows the Phase 2 review (`listShapes` price = backing × (1 + markup)).
+Reversibility: timelocked parameter.
+Owner action: Optional review.
+
+### D005: Keep the decay floor near the player break-even bound (85% of schedule)
+Status: REVIEW
+Importance: High
+Why it came up: Phase 3 exact FWA math. When a Check's notional falls below its market value, draws gain expected
+value; with 20 Checks among 57 listings, players break even with every Check at 87.5% of value. Deeper decay pays a
+subsidy on each Check won and invites arbitrage draws.
+Desired outcome: long survivors become more winnable (the spec's decay promise) without turning the pool into a
+giveaway.
+Options considered: (a) floor 85%, 0.2% per survived draw; (b) deep decay to 25% (subsidy 25 ETH over two years
+and arbitrage draws); (c) no decay (subsidy ≈ 0, but survivors never gain odds).
+Recommended choice: (a), reviewed with the schedule. Decay then mostly shifts odds among prizes.
+Tradeoff: a long-surviving Check gains at most ~1/0.85 = 18% more weight, a modest effect.
+Action taken: modelled ("Recommended" scenario, subsidy 4.4 ETH, P(single) 27%). Decay is not in the engine yet
+(Phase 4).
+Reversibility: timelocked parameters.
+Owner action: Required before finalization.
+
 Use this template:
 
 ### D001: Short question
@@ -99,6 +132,10 @@ Record important noncontroversial implementation choices with evidence and commi
 - C006 Players buy directly from FWA (`acquire`/`acquireBatch`); no protocol draw router, so there is no router to
   bypass. A purchase operator is not needed for pausing. Revisit only if a gate on in-flight requests is required.
 - C007 Newly migrated Originals are listed only after their epoch is revealed (51 blocks after mint). Evidence: E7.
+- C010 Survival is derived, not iterated: the controller is its pool's only depositor and never stages listings, so
+  every prize allocation removes exactly one of its active listings (FWA `_settleAndRemove`, verified source).
+  Allocations = listed − withdrawn − `activeListingCount()`. Same semantics as the draw-by-draw cursor (D002), O(1),
+  no keeper gas per draw. Replaces `SurvivalCursor` after the Phase 2 review.
 - C008 Governance from stock parts: OpenZeppelin `TimelockController` (council the only proposer, guardian an
   extra canceller, open execution, self-administered, 7-day delay) and an ERC1967/UUPS engine whose upgrades, role
   changes, schedule and controller changes are timelock-only. Operator powers: halt only. Guardian: halt, resume,
