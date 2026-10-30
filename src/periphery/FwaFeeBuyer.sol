@@ -17,8 +17,9 @@ interface IFwaPoolKey {
 /// @notice Deploy helper: buys FWA with ETH on FWA's own v4 pool and delivers it straight to `recipient` (the pool
 ///         controller, which must pay FWA's 50,000 FWA pool-creation fee itself). FWA is transfer-locked between
 ///         wallets; PoolManager → recipient is allowed under the transient allowance FWA's hook grants during a swap.
-///         Stateless; refunds unspent ETH to the caller. Provenance: ripe0x/collection-games
-///         `src/periphery/FwaFeeRoutes.sol` (MIT), unchanged.
+///         Stateless; refunds the caller's own unspent ETH. ETH forced in by anyone else stays here, out of the next
+///         caller's reach (audit M1). Provenance: ripe0x/collection-games `src/periphery/FwaFeeRoutes.sol` (MIT), with
+///         that refund and without `receive`.
 contract FwaFeeBuyer is IUnlockCallback {
     IPoolManager public immutable poolManager;
     address public immutable fwa;
@@ -32,11 +33,12 @@ contract FwaFeeBuyer is IUnlockCallback {
     }
 
     function buyTo(address recipient, uint256 minOut) external payable returns (uint256 out) {
+        uint256 prior = address(this).balance - msg.value;
         uint256 before = SafeTransferLib.balanceOf(fwa, recipient);
         poolManager.unlock(abi.encode(recipient, msg.value));
         out = SafeTransferLib.balanceOf(fwa, recipient) - before;
         if (out < minOut) revert InsufficientOutput(out, minOut);
-        uint256 left = address(this).balance;
+        uint256 left = address(this).balance - prior;
         if (left != 0) SafeTransferLib.forceSafeTransferETH(msg.sender, left);
     }
 
@@ -53,6 +55,4 @@ contract FwaFeeBuyer is IUnlockCallback {
         poolManager.take(key.currency1, recipient, uint256(int256(d.amount1())));
         return "";
     }
-
-    receive() external payable {}
 }

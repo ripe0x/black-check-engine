@@ -20,7 +20,6 @@ contract Deploy is Script, DeploySystem {
         c.operator = vm.envAddress("OPERATOR");
         c.coinName = vm.envString("COIN_NAME");
         c.coinSymbol = vm.envString("COIN_SYMBOL");
-        require(keccak256(bytes(c.coinSymbol)) != keccak256("BLACK"), "placeholder ticker: choose a distinct public name");
         require(block.chainid == 1, "mainnet values");
         if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) {
             require(keccak256(bytes(vm.envOr("I_AM_THE_OWNER", string("")))) == keccak256("yes"), "owner ack");

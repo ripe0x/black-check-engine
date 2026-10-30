@@ -22,13 +22,13 @@ interface IBurnable {
 ///         function that removes liquidity, collects or transfers anything out, and no owner: once launched the whole
 ///         coin supply is locked in the pool forever. The pool's LP fee is 0 (VenueHook's ETH fee is the only fee), so
 ///         the position earns nothing to collect.
-/// @dev `launch()` (the deployer, once) initialises the pool at `startTick` (coin per ETH) and adds every coin
+/// @dev `launch()` (the deployer or the timelock, once) initialises the pool at `startTick` (coin per ETH) and adds every coin
 ///      this contract holds as one single-sided position over `[TICK_LOWER, startTick)`: as buyers pay ETH the price
 ///      moves down through it and the position becomes ETH-paired. No ETH is needed and none is accepted (not payable),
 ///      so the price can never return above `startTick` and no ETH is ever placed where a seller or a withdrawal could
 ///      reach it. The coin left over by liquidity rounding (a few wei) is burned so total supply equals what the pool
 ///      holds plus what holders hold. Provenance: collection-games `ProtocolLiquidity` (MIT), without Governed: launch
-///      is one-shot and gated to the immutable deployer, there is no owner and no sweep.
+///      is one-shot and gated to the immutable deployer and timelock, there is no owner and no sweep.
 contract VenueLiquidity is IUnlockCallback, ReentrancyGuard {
     int24 public constant TICK_SPACING = 200;
     int24 public constant TICK_LOWER = -887_200;
@@ -39,6 +39,8 @@ contract VenueLiquidity is IUnlockCallback, ReentrancyGuard {
     /// @notice The one address that wires the hook and opens the market. Set at construction, never changed; it cannot
     ///         withdraw liquidity or fees because no such function exists.
     address public immutable deployer;
+    /// @notice May also launch, so a lost or withholding deployer cannot keep the supply locked out of trading forever.
+    address public immutable timelock;
 
     address public hook;
     bool public launched;
@@ -51,14 +53,15 @@ contract VenueLiquidity is IUnlockCallback, ReentrancyGuard {
 
     error AlreadyLaunched();
     error NotDeployer();
+    error NotLauncher();
     error NotPoolManager();
     error ZeroAddress();
     error AlreadyWired();
     error NotWired();
     error BadTick();
 
-    constructor(IPoolManager manager, address token_, int24 startTick_) {
-        if (address(manager) == address(0) || token_ == address(0)) revert ZeroAddress();
+    constructor(IPoolManager manager, address token_, int24 startTick_, address timelock_) {
+        if (address(manager) == address(0) || token_ == address(0) || timelock_ == address(0)) revert ZeroAddress();
         if (
             startTick_ % TICK_SPACING != 0 || startTick_ <= TICK_LOWER + TICK_SPACING
                 || startTick_ >= TICK_UPPER - TICK_SPACING
@@ -67,6 +70,7 @@ contract VenueLiquidity is IUnlockCallback, ReentrancyGuard {
         token = token_;
         startTick = startTick_;
         deployer = msg.sender;
+        timelock = timelock_;
     }
 
     /// @notice One-shot wiring by the deployer: the hook, CREATE2-mined after this contract exists.
@@ -88,10 +92,10 @@ contract VenueLiquidity is IUnlockCallback, ReentrancyGuard {
         });
     }
 
-    /// @notice Opens the market at the constructor's `startTick`. Deployer, once. The opening valuation is
-    ///         supply / (coins per ETH at `startTick`). Not payable: no ETH is seeded.
+    /// @notice Opens the market at the constructor's `startTick`. The opening valuation is
+    ///         supply / (coins per ETH at `startTick`). Deployer or timelock, once. Not payable: no ETH is seeded.
     function launch() external nonReentrant {
-        if (msg.sender != deployer) revert NotDeployer();
+        if (msg.sender != deployer && msg.sender != timelock) revert NotLauncher();
         if (hook == address(0)) revert NotWired();
         if (launched) revert AlreadyLaunched();
         launched = true;

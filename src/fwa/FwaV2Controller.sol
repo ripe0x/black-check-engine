@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {IFWAPool, IFWAFactory, FWA_ACQUISITIONS_ENABLED} from "../interfaces/IFWA.sol";
+import {IFWAPool, IFWAFactory, IPurchaseOperator, FWA_ACQUISITIONS_ENABLED} from "../interfaces/IFWA.sol";
 import {IController} from "../interfaces/IController.sol";
 
 interface IERC20Approve {
@@ -26,7 +26,7 @@ interface IERC721Min {
 ///      ways (`_settleAndRemove`): a withdrawal by this contract, or a draw allocating that listing as its prize. So
 ///      prize-allocating draws = listed - withdrawn - `activeListingCount()`, read from FWA state with no per-draw
 ///      work, and a listing still Active has survived every allocation since its entry.
-contract FwaV2Controller is IController {
+contract FwaV2Controller is IController, IPurchaseOperator {
     address public immutable engine;
     IFWAFactory public immutable factory;
     address public immutable implementation;
@@ -82,6 +82,7 @@ contract FwaV2Controller is IController {
         uint256 fee = factory.poolCreationFee();
         IERC20Approve(fwaToken).approve(address(factory), fee);
         if (factory.createPool(salt, fee, implementation) != address(pool)) revert PoolMismatch();
+        pool.setPurchaseOperator(address(this));
         IERC721Min(checks).setApprovalForAll(address(pool), true);
         IERC721Min(shapes).setApprovalForAll(address(pool), true);
     }
@@ -151,6 +152,16 @@ contract FwaV2Controller is IController {
         (address collection,,, uint256 tokenId,,,,) = pool.listings(listingId);
         pool.recoverRefundedNFT(listingId);
         IERC721Min(collection).transferFrom(address(this), engine, tokenId);
+    }
+
+    /// @notice FWA's purchase gate, staticcalled before every purchase. Refuses purchasers that would put a won prize
+    ///         beyond recovery: Shapes rejects receiving its own tokens, so a won Shape would sit in FWA's delivery
+    ///         quarantine with no purchaser able to claim the refund that frees it (Checks is refused on the same
+    ///         ground); the pool, this contract and the engine would hold a prize FWA records as delivered. Every other
+    ///         address may buy (audit H2).
+    function canPurchase(address purchaser) external view returns (bool) {
+        return purchaser != shapes && purchaser != checks && purchaser != address(pool) && purchaser != address(this)
+            && purchaser != engine;
     }
 
     /// @notice Draws that allocated a prize in this pool since it opened.

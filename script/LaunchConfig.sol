@@ -20,7 +20,7 @@ library LaunchConfig {
         c.fwaImplementation = 0xEaa4d032908A9734a2c7939c0D211c35ad51eb31;
         c.poolSalt = keccak256("checks-survival.pool.v1");
         c.coinName = "Placeholder Coin";
-        c.coinSymbol = "BLACK"; // placeholder: the mainnet script refuses it (CLAUDE.md invariant 9)
+        c.coinSymbol = "BLACK"; // placeholder: postflight refuses it (CLAUDE.md invariant 9)
         c.coinSupply = 1_000_000_000 ether;
         c.poolManager = IPoolManager(0x000000000004444c5dc75cB358380D2e3dE08A90); // Uniswap v4 PoolManager
         c.venueFeeBps = 100; // 1% placeholder (D009)

@@ -55,6 +55,25 @@ contract MarketTest is SystemBase {
         for (uint256 i; i < n; ++i) _drawSelecting(pool, _shapeListing(shapeIds[nextShape++]));
     }
 
+    /// Audit H2: purchasers that would put a won prize beyond recovery are refused before anything is charged.
+    function test_gateRefusesUnrecoverablePurchasers() public {
+        assertEq(pool.purchaseOperator(), address(controller));
+        address[5] memory refused =
+            [address(SHAPES), address(CHECKS), address(pool), address(controller), address(engine)];
+        (uint256 fee,, uint256 total) = pool.quoteAcquisitionPrice(1);
+        uint256 version = pool.inventoryVersion();
+        vm.deal(player, total);
+        for (uint256 i; i < refused.length; ++i) {
+            assertFalse(controller.canPurchase(refused[i]));
+            vm.prank(player);
+            vm.expectRevert(bytes4(keccak256("PurchaseNotAllowed()")));
+            pool.acquire{value: total}(refused[i], fee, 0, 10_000, version, block.timestamp + 1 hours);
+        }
+        assertEq(player.balance, total, "nothing was charged");
+        assertTrue(controller.canPurchase(player));
+        _drawShapes(1); // ordinary draws still work
+    }
+
     // ------------------------------------------------------------------ decay
 
     function test_decayRepricesByRuleToTheFloor() public {

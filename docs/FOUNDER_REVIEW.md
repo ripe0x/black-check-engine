@@ -27,7 +27,7 @@ weekly bid cap (0.75 ETH), Burner chunk, interval and reserve.
 
 ## Gates outside the code
 
-1. **Name and ticker**: must be distinct from Black Check / BLKCHK (placeholder `BLACK`; the deploy script refuses it).
+1. **Name and ticker**: must be distinct from Black Check / BLKCHK (placeholder `BLACK`; postflight refuses it).
 2. **Council**: membership, threshold (3 of 5 tentative) and guardian; independence is an offchain fact.
 3. **Legal review** of paid chance draws for NFTs and the coin's buyback and buyout mechanics.
 4. **Independent audit** of the scope in docs/AUDIT_SCOPE.md.
@@ -56,7 +56,8 @@ weekly bid cap (0.75 ETH), Burner chunk, interval and reserve.
 ## Open risks
 
 - Prices lag the market by at least 7 days; a rally underprices prizes until the schedule moves (subsidy).
-- Buy-and-burn without an oracle can lose up to one chunk per interval to MEV.
+- Buy-and-burn has no oracle; its chunk is capped (about 0.5 ETH at the placeholder fee and tick) so a sandwich
+  loses money (D011).
 - With ~20 Originals, Checks leave the pool in about a month at 25 draws a day unless coin fees keep buying.
 - No keeper incentive; maintenance depends on someone running it.
 

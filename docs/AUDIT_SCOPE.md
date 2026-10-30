@@ -46,7 +46,10 @@ should try to break:
 
 - A council majority can upgrade the engine to anything after 7 days if the guardian does not cancel.
 - Prices lag the market by at least the timelock delay (D003); coin buyouts launch disabled (D006).
-- Buy-and-burn has no oracle: a sandwich can skim part of one capped chunk per interval (D010).
+- Buy-and-burn has no oracle. Instead the burner's chunk is bounded so a sandwich costs more in venue fees than it
+  gains (D010, D011); this rests on the venue fee being charged on both legs.
+- A player who names a purchaser that cannot use an NFT loses their own prize. The FWA purchase gate refuses only the
+  known contracts that would strand it in FWA's delivery quarantine (D011).
 - The weekly bid cap is epoch-aligned (up to 2× across a boundary), bounded by the budget.
 - Keepers are unpaid. NFTs sent to the engine directly are quarantined (no sweep, and keepers do not see them).
 - Opening fee curve against launch snipers is not implemented (D009).

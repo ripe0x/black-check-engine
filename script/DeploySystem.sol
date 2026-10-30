@@ -23,7 +23,8 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 ///      `deployer` must be the account whose nonce the `new` calls use (the test contract, or the broadcaster);
 ///      `create2Deployer` is the account that executes `new{salt}` (the test contract, or forge's CREATE2 factory in a
 ///      script). The coin is minted straight to the venue's liquidity contract, whose address is predicted.
-///      The market opens later, when the deployer calls `VenueLiquidity.launch()` once, at the price fixed here.
+///      The market opens later, when the deployer (or, failing it, the timelock) calls `VenueLiquidity.launch()` once,
+///      at the price fixed here.
 abstract contract DeploySystem is CommonBase {
     struct Config {
         address council; // sole timelock proposer (Safe multisig in production)
@@ -74,7 +75,7 @@ abstract contract DeploySystem is CommonBase {
 
         address liquidityPredicted = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
         s.coin = new Coin(c.coinName, c.coinSymbol, c.coinSupply, liquidityPredicted);
-        s.liquidity = new VenueLiquidity(c.poolManager, address(s.coin), c.venueStartTick);
+        s.liquidity = new VenueLiquidity(c.poolManager, address(s.coin), c.venueStartTick, address(s.timelock));
         if (address(s.liquidity) != liquidityPredicted) revert Postflight("liquidity address");
         s.implementation = new Engine(c.checks, c.editions, c.shapes, ICoinBurn(address(s.coin)));
         address enginePredicted = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
@@ -152,12 +153,21 @@ abstract contract DeploySystem is CommonBase {
         if (s.coin.totalSupply() != c.coinSupply || s.coin.balanceOf(address(s.liquidity)) != c.coinSupply) {
             revert Postflight("coin");
         }
+        // Never under the existing Black Check project's name, nor the LaunchConfig placeholders (CLAUDE.md invariant 9).
+        bytes32 sym = keccak256(bytes(s.coin.symbol()));
+        bytes32 name = keccak256(bytes(s.coin.name()));
+        if (
+            sym == keccak256("BLACK") || sym == keccak256("BLKCHK") || name == keccak256("Black Check")
+                || name == keccak256("Placeholder Coin")
+        ) revert Postflight("coin name");
         // The deployer wired the hook once; check it is the honest one before anyone trades.
         VenueHook h = s.hook;
         if (h.engine() != IFundAcquisitions(address(e)) || h.launcher() != address(s.liquidity)) revert Postflight("hook wiring");
         if (h.token() != address(s.coin) || h.feeBps() != c.venueFeeBps) revert Postflight("hook terms");
         if (s.liquidity.hook() != address(h) || s.liquidity.token() != address(s.coin)) revert Postflight("liquidity wiring");
-        if (s.liquidity.launched() || s.liquidity.deployer() != deployer) revert Postflight("liquidity state");
+        if (s.liquidity.launched() || s.liquidity.deployer() != deployer || s.liquidity.timelock() != address(t)) {
+            revert Postflight("liquidity state");
+        }
         // Tick 0 (an unset Config field) would open at 1 coin per ETH.
         if (c.venueStartTick == 0 || s.liquidity.startTick() != c.venueStartTick) revert Postflight("opening price");
     }

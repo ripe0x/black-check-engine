@@ -198,6 +198,46 @@ Action taken: `src/treasury/Burner.sol`, `Engine.releaseSurplus`, `setBurner`; `
 `test_surplusBuysAndBurnsCoin` on the real venue.
 Reversibility: the burner can be replaced through the timelock.
 Owner action: Optional review (reserve size and daily chunk).
+Amended 2026-10-30 (rc1 audit H1, D011): the MEV leakage above is closed by construction. `Burner` refuses a chunk
+above half the venue fee's share of the pool's virtual ETH depth at the opening price, and a zero interval. At the
+placeholder fee (1%) and tick (161,200) the depth is 99.89 ETH and the largest chunk 0.4995 ETH.
+
+### D011: rc1 audit findings and their fixes
+Status: REVIEW
+Importance: High
+Why it came up: The owner-arranged fresh-discovery audit of `rc1` (docs/review/rc1-audit.md) reproduced three High and
+one Medium finding plus a deployment-gate defect on a fork pinned at block 26,305,656.
+Desired outcome: no public value extraction, no stranded prize, no single key holding coin-market liveness, the
+founder's naming invariant enforced by the one deployment path.
+Options considered and choices:
+- H1 burner sandwich. (a) an oracle hook or a two-step armed price; (b) bound the chunk so a sandwich cannot pay.
+  Chosen (b). The attacker pays the venue's ETH fee on both legs and gains only the price move the chunk causes. The
+  pool is shallowest at its opening price and can never return above it, so one constructor bound covers every pool
+  state. Measured on the fork: at a 1% fee no front-run from 0.001 to 400 ETH profits at up to twice the bound, on a
+  fresh pool or after 20 or 200 ETH of prior buys; the audit's 10 ETH chunk returned up to 3.48 ETH to the attacker.
+  Tradeoff: burns per interval are capped near 0.5 ETH at the placeholder launch values (the planned chunk was 0.1).
+- H2 caller-chosen FWA purchaser. The controller is now the pool's FWA purchase gate (set in `open`) and refuses the
+  Shapes and Checks contracts, the pool, itself and the engine as purchasers. Shapes rejects receiving its own tokens,
+  so a Shape won by the Shapes contract sat in FWA's delivery quarantine with nobody able to claim the refund that
+  frees it, and restocking spent game capital each time. FWA delivers with plain `transferFrom`, so any other
+  recipient receives its prize; a player who names an address that cannot use an NFT loses only their own prize, as
+  if they burned it.
+- H3 deployer-only launch. `VenueLiquidity` also accepts `launch()` from the timelock, so a lost or withholding
+  deployer cannot keep the supply out of trading. The deployer can still launch alone at the fixed price.
+- M1 fee-buyer refund. `FwaFeeBuyer` refunds only the caller's own unspent ETH and has no `receive`.
+- Name gate. `postflight` refuses the symbols BLACK and BLKCHK and the names "Black Check" and "Placeholder Coin";
+  the duplicate check in `Deploy.s.sol` is removed.
+- Not changed: the fee buyer swaps exact ETH input, so FWA bought above the 50,000 fee stays in the controller with no
+  exit. Funding it with the smallest ETH that buys the fee (searched to 0.0005 ETH in
+  `test_fwaFeeBoughtWithEthOpensThePool`, 0.1303 ETH at block 26,302,000) and `minOut` = fee bounds that excess.
+Action taken: src/treasury/Burner.sol, src/fwa/FwaV2Controller.sol, src/venue/VenueLiquidity.sol,
+src/periphery/FwaFeeBuyer.sol, script/DeploySystem.sol; tests in test/fork/Deploy.t.sol and Market.t.sol. The
+audit's own reproductions, run against the fixed tree and not committed, now fail as intended: the H2 draws revert
+with FWA's `PurchaseNotAllowed`, the council launch succeeds, the forced ETH stays in the fee buyer, and the audit's
+burner construction reverts with `ChunkTooLarge`.
+Reversibility: burner and controller are replaceable through the timelock; the venue and hook are immutable once
+deployed (not deployed).
+Owner action: Optional review (the H1 chunk bound caps burn speed).
 
 Use this template:
 

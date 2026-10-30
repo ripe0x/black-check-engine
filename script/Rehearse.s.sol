@@ -24,6 +24,7 @@ contract Rehearse is Script, DeploySystem {
         c.guardian = 0x90F79bf6EB2c4f870365E785982E1f101E93b906; // anvil #3
         c.council = 0x70997970C51812dc3A010C7d01b50e0d17dc79C8; // anvil #1
         c.operator = 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC; // anvil #2
+        c.coinName = "Test Coin";
         c.coinSymbol = "TEST";
         c.poolSalt = keccak256("rehearsal.pool");
 

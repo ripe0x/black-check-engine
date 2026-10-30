@@ -8,6 +8,7 @@ import {Swapper} from "./Venue.t.sol";
 import {FwaFeeBuyer} from "../../src/periphery/FwaFeeBuyer.sol";
 import {Burner, IVenue} from "../../src/treasury/Burner.sol";
 import {Engine} from "../../src/core/Engine.sol";
+import {VenueLiquidity} from "../../src/venue/VenueLiquidity.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 interface IBal {
@@ -21,6 +22,8 @@ contract DeployTest is ForkBase, DeploySystem {
         c.council = makeAddr("council");
         c.guardian = makeAddr("guardian");
         c.operator = makeAddr("operator");
+        c.coinName = "Test Coin";
+        c.coinSymbol = "TEST";
     }
 
     function test_deployAndPostflight() public {
@@ -46,6 +49,89 @@ contract DeployTest is ForkBase, DeploySystem {
         System memory s = deploySystem(c, address(this), address(this));
         vm.expectRevert(abi.encodeWithSelector(Postflight.selector, "opening price"));
         this.check(s, c);
+    }
+
+    /// Audit: the Black Check project's name and the LaunchConfig placeholders are refused by the one deploy path.
+    function test_postflightRefusesBlackCheckNames() public {
+        string[2][4] memory names =
+            [["Test Coin", "BLACK"], ["Test Coin", "BLKCHK"], ["Black Check", "TEST"], ["Placeholder Coin", "TEST"]];
+        for (uint256 i; i < names.length; ++i) {
+            Config memory c = _config();
+            c.coinName = names[i][0];
+            c.coinSymbol = names[i][1];
+            c.poolSalt = bytes32(i + 1);
+            System memory s = deploySystem(c, address(this), address(this));
+            vm.expectRevert(abi.encodeWithSelector(Postflight.selector, "coin name"));
+            this.check(s, c);
+        }
+    }
+
+    /// Audit H3: if the deployer never launches, the council can, through the full timelock delay; outsiders cannot.
+    function test_timelockLaunchesWhenDeployerWithholds() public {
+        Config memory c = _config();
+        System memory s = deploySystem(c, address(this), address(this));
+        postflight(s, c, address(this));
+        vm.prank(c.guardian);
+        vm.expectRevert(VenueLiquidity.NotLauncher.selector);
+        s.liquidity.launch();
+
+        bytes memory data = abi.encodeCall(VenueLiquidity.launch, ());
+        vm.prank(c.council);
+        s.timelock.schedule(address(s.liquidity), 0, data, bytes32(0), bytes32(0), c.delay);
+        vm.warp(vm.getBlockTimestamp() + c.delay - 1);
+        vm.expectRevert();
+        s.timelock.execute(address(s.liquidity), 0, data, bytes32(0), bytes32(0));
+        vm.warp(vm.getBlockTimestamp() + 1);
+        s.timelock.execute(address(s.liquidity), 0, data, bytes32(0), bytes32(0));
+        assertTrue(s.liquidity.launched());
+        assertLt(s.coin.balanceOf(address(s.liquidity)), 1e12, "supply moved into the pool");
+    }
+
+    /// Audit M1: ETH forced into the fee buyer is not refunded to the next caller; a caller gets back only its own.
+    function test_feeBuyerRefundsOnlyTheCallersEth() public {
+        FwaFeeBuyer buyer = new FwaFeeBuyer(_config().poolManager, FWA_TOKEN);
+        (bool ok,) = address(buyer).call{value: 1 wei}("");
+        assertFalse(ok, "no receive: plain sends are refused");
+        vm.deal(address(buyer), 1 ether); // stands in for a forced transfer
+        address caller = makeAddr("caller");
+        vm.deal(caller, 0.01 ether);
+        vm.prank(caller);
+        buyer.buyTo{value: 0.01 ether}(caller, 0);
+        assertEq(address(buyer).balance, 1 ether, "forced ETH stays");
+        assertLe(caller.balance, 0.01 ether, "caller gains nothing beyond its own unspent ETH");
+    }
+
+    /// Audit H1: a burn at the largest allowed chunk cannot be sandwiched at a profit, for front-runs from 0.001 to
+    /// 400 ETH, on the fresh pool and after 200 ETH of prior buys. Same-block buy, burn, sell by one attacker.
+    function test_largestBurnerChunkCannotBeSandwichedAtAProfit() public {
+        Config memory c = _config();
+        System memory s = deploySystem(c, address(this), address(this));
+        s.liquidity.launch();
+        uint256 chunk = 0.499 ether;
+        Burner burner = new Burner(IVenue(address(s.liquidity)), chunk, 1 days);
+        Swapper swapper = new Swapper(c.poolManager, s.liquidity.poolKey());
+        uint256[9] memory fronts =
+            [uint256(0.001 ether), 0.01 ether, 0.1 ether, 0.5 ether, 2 ether, 10 ether, 50 ether, 150 ether, 400 ether];
+        for (uint256 prior; prior <= 200 ether; prior += 200 ether) {
+            if (prior != 0) {
+                vm.deal(address(this), prior);
+                swapper.buy{value: prior}(prior, false);
+            }
+            for (uint256 i; i < fronts.length; ++i) {
+                uint256 snap = vm.snapshotState();
+                vm.deal(address(burner), chunk);
+                address attacker = makeAddr("attacker");
+                vm.deal(attacker, fronts[i]);
+                vm.startPrank(attacker);
+                (, uint256 coins) = swapper.buy{value: fronts[i]}(fronts[i], false);
+                burner.burn();
+                s.coin.approve(address(swapper), coins);
+                swapper.sell(coins, false);
+                vm.stopPrank();
+                assertLt(attacker.balance, fronts[i], "sandwich lost money");
+                vm.revertToState(snap);
+            }
+        }
     }
 
     /// Coin fees fund acquisitions end to end: deploy through the production routine, open the market, trade, forward.
@@ -105,6 +191,10 @@ contract DeployTest is ForkBase, DeploySystem {
         s.liquidity.launch();
         vm.expectRevert(Burner.Nothing.selector);
         new Burner(IVenue(address(s.liquidity)), 0, 1 days);
+        vm.expectRevert(Burner.ChunkTooLarge.selector);
+        new Burner(IVenue(address(s.liquidity)), 0.1 ether, 0); // several burns per block
+        vm.expectRevert(Burner.ChunkTooLarge.selector);
+        new Burner(IVenue(address(s.liquidity)), 0.5 ether, 1 days); // above half the 1% share of ~99.9 ETH depth
         Burner burner = new Burner(IVenue(address(s.liquidity)), 0.1 ether, 1 days);
 
         bytes memory data = abi.encodeCall(Engine.setBurner, (address(burner), uint128(0.5 ether)));

@@ -100,7 +100,7 @@ contract VenueForkTest is ForkBase {
         super.setUp();
         coin = new Coin("Placeholder Coin", "BLACK", SUPPLY, address(this));
         engine = _deployEngine();
-        liq = new VenueLiquidity(PM, address(coin), START_TICK); // deployer = this test contract
+        liq = new VenueLiquidity(PM, address(coin), START_TICK, makeAddr("timelock")); // deployer = this test contract
         hook = _mineAndDeployHook();
         liq.wire(address(hook));
         coin.transfer(address(liq), SUPPLY);
@@ -201,7 +201,7 @@ contract VenueForkTest is ForkBase {
 
     function test_launchOnlyDeployerAndRefusesEth() public {
         vm.prank(trader);
-        vm.expectRevert(VenueLiquidity.NotDeployer.selector);
+        vm.expectRevert(VenueLiquidity.NotLauncher.selector);
         liq.launch();
         // not payable: ETH sent with launch is rejected
         vm.deal(address(this), 2 ether);
@@ -215,7 +215,7 @@ contract VenueForkTest is ForkBase {
     /// Review finding: the opening price cannot be chosen at launch time; a bad tick fails at construction.
     function test_badStartTickRefusedAtConstruction() public {
         vm.expectRevert(VenueLiquidity.BadTick.selector);
-        new VenueLiquidity(PM, address(coin), 161_201);
+        new VenueLiquidity(PM, address(coin), 161_201, makeAddr("timelock"));
     }
 
     function test_buyRoutesFlatFeeInEthToHook() public {

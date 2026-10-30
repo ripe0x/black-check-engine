@@ -65,6 +65,15 @@ None.
   Slither triaged, no change; deploy simulation with postflight; local rehearsal; keeper 7/7; site typecheck and
   build. Commands and limits: docs/receipts/rc1-verification.md.
 
+## rc1 audit (owner-arranged, 2026-10-30)
+- Report: docs/review/rc1-audit.md (fork block 26,305,656). Findings H1 burner sandwich, H2 caller-chosen FWA
+  purchaser stranding a Shape, H3 deployer-only launch, M1 fee-buyer refund, and the coin-name gate: all fixed on
+  `dev` (D011, D010 amended).
+- Focused evidence on the fixes: `forge test --match-path "test/fork/{Deploy,Venue,Market,Lifecycle,Custody,Migration}.t.sol"`
+  all pass (Deploy 10, Venue 9, Market 12, Lifecycle 11, Custody 11, Migration 3); `forge test --match-path
+  test/fork/Invariant.t.sol` 4/4, 1,600 calls, 0 reverts. The audit's reproductions, run against the fixed tree
+  (not committed), now fail as intended. Contract sizes: Burner, controller, venue and fee buyer well under EIP-170.
+
 ## Completed since the last status block
 - Keeper (406262c), site (2b17567), audit scope draft (23e32f7), third independent review and its fixes (b608e19:
   opening tick fixed at venue construction, burner reads its pool from the venue), founder review document.

@@ -52,6 +52,8 @@ abstract contract SystemBase is ForkBase, DeploySystem {
         c.council = council;
         c.guardian = guardian;
         c.operator = operator;
+        c.coinName = "Test Coin";
+        c.coinSymbol = "TEST";
         c.poolSalt = "pool-1";
         c.tierNotional = _tiers();
         c.drawsToCompose = _thresholds();
