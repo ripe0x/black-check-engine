@@ -64,6 +64,7 @@ contract MarketTest is SystemBase {
         engine.reprice(checkIds);
         assertEq(_price(checkIds[0]), 1 ether);
         _drawShapes(15); // 25 survived: 5% drop, one step
+        assertEq(engine.currentNotional(checkIds[0]), 0.95 ether);
         engine.reprice(checkIds);
         assertEq(_price(checkIds[0]), 0.95 ether);
 
@@ -101,6 +102,7 @@ contract MarketTest is SystemBase {
     function test_manualComposeBurnsOnceFallbackIsFree() public {
         _drawShapes(2); // threshold reached, grace (3 more) not
         uint256 supply = coin.totalSupply();
+        assertEq(engine.composeCost(checkIds[1], checkIds[0], true), 100 ether);
         // A swapped (artistic) choice burns composeBurn[0] once.
         engine.compose(checkIds[1], checkIds[0], true);
         assertEq(supply - coin.totalSupply(), 100 ether);
@@ -118,6 +120,8 @@ contract MarketTest is SystemBase {
         address nobody = makeAddr("nobody");
         uint256 keep = more[0] < more[1] ? more[0] : more[1];
         uint256 other = keep == more[0] ? more[1] : more[0];
+        assertEq(engine.composeCost(keep, other, false), 0, "view agrees: free fallback");
+        assertEq(engine.composeCost(other, keep, false), 100 ether, "the other survivor pays");
         vm.prank(nobody);
         engine.compose(keep, other, false);
         assertEq(coin.totalSupply(), supply, "free fallback");

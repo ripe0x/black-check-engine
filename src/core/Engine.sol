@@ -316,11 +316,7 @@ contract Engine is Initializable, UUPSUpgradeable {
     function compose(uint256 keep, uint256 burn, bool swap) external nonReentrant {
         if (!eligible(keep) || !eligible(burn)) revert NotEligible();
         uint8 tier = checks.getCheck(keep).stored.divisorIndex;
-        uint256 burned;
-        bool deterministic = !swap && _first(keep, burn) == keep;
-        if (!(deterministic && _readyAt(keep, params.graceDraws) && _readyAt(burn, params.graceDraws))) {
-            burned = composeBurn[tier];
-        }
+        uint256 burned = _composeCost(keep, burn, swap, tier);
         uint256[] memory ids = new uint256[](2);
         ids[0] = keep;
         ids[1] = burn;
@@ -331,6 +327,22 @@ contract Engine is Initializable, UUPSUpgradeable {
         delete carriedDraws[burn];
         emit Composed(msg.sender, keep, burn, tier + 1, burned);
         _relist(keep);
+    }
+
+    /// @notice Coin `compose(keep, burn, swap)` would burn now: zero on the free deterministic fallback.
+    function composeCost(uint256 keep, uint256 burn, bool swap) external view returns (uint256) {
+        return _composeCost(keep, burn, swap, checks.getCheck(keep).stored.divisorIndex);
+    }
+
+    function _composeCost(uint256 keep, uint256 burn, bool swap, uint8 tier) internal view returns (uint256) {
+        bool deterministic = !swap && _first(keep, burn) == keep;
+        if (deterministic && _readyAt(keep, params.graceDraws) && _readyAt(burn, params.graceDraws)) return 0;
+        return composeBurn[tier];
+    }
+
+    /// @notice The rule notional a Check would list or reprice to now (schedule decayed by its survived draws).
+    function currentNotional(uint256 tokenId) external view returns (uint256) {
+        return _notional(checks.getCheck(tokenId).stored.divisorIndex, survivedDraws(tokenId));
     }
 
     function _first(uint256 a, uint256 b) internal view returns (uint256) {
