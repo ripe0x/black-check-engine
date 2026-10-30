@@ -1,6 +1,6 @@
 # Current execution status
 
-Stage: Phase 0 complete. Phase 1 (prove the game lifecycle on a fork) next.
+Stage: Phase 1 complete (game lifecycle proven on a mainnet fork). Phase 2 (custody and upgradeability) next.
 Branch: `dev` (local). Latest milestone commit: see `git log`.
 
 ## Pinned environment
@@ -9,12 +9,16 @@ Branch: `dev` (local). Latest milestone commit: see `git log`.
 - Addresses and runtime code hashes: `test/fork/ForkBase.sol`, `test/fork/Pins.t.sol`.
 
 ## Completed
-- Phase 0: Foundry project, pinned dependencies, vendored verified sources (`external/`), interfaces
+- Phase 0 (52a0fdc): Foundry project, pinned dependencies, vendored verified sources (`external/`), interfaces
   (`src/interfaces/IFWA.sol`, `src/interfaces/IChecks.sol`), pin tests, risk register and experiment specs
   (`docs/RISKS.md`).
+- Phase 1: E1-E9 on real FWA, Checks and Shapes contracts (`test/fork/Lifecycle.t.sol`, `BlackCheck.t.sol`,
+  `Editions.t.sol`; harness `test/fork/Lab.sol` is test-only and has a generic call by design). First protocol
+  component: `src/game/SurvivalCursor.sol` (permissionless draw counting from FWA's ordered records).
 
 ## Evidence and test results
-- `forge test --match-path test/fork/Pins.t.sol` at block 26,302,000: 3 passed, 0 failed (real mainnet state).
+- `forge test --match-path 'test/fork/*.t.sol'` at block 26,302,000: 12 passed, 0 failed (real mainnet contracts;
+  setup cheats listed in docs/RISKS.md "Phase 1 receipts"). Gas figures in the same section.
 - Onchain reads (cast, same block): Checks 12,474 minted / 7,149 burned / 5,325 live; Editions 3,556; 0 Infinity
   events; 85 single-tier composites.
 
@@ -22,11 +26,13 @@ Branch: `dev` (local). Latest milestone commit: see `git log`.
 None.
 
 ## Next executable action
-Phase 1, E1 then E5 (highest risk first): controller-owned FWA pool on the fork, then 64-single `infinity` gas on
-real singles. Then E2, E3, E4, E6-E9 per docs/RISKS.md.
+Phase 2: threat model (docs/THREAT_MODEL.md), then the minimal custody set: vault, per-pool controller with fixed
+recipients, council + timelock upgrade path; adversarial tests for extraction, approvals, malicious migration, and a
+migration to a different FWA pool with pending draws settled.
 
 ## Review queue
-docs/DECISIONS.md: D001 (Black Check needs 25.6% of all possible Check units).
+docs/DECISIONS.md: D001 (Black Check needs 25.6% of all possible Check units), D002 (survival counts allocating
+draws at processing).
 
 ## Continuity protocol
 After each meaningful increment, update this file with phase, completed work, exact commands and test outcomes, risks,

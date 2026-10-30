@@ -29,19 +29,33 @@ Each risk names the experiment that settles it. Status is updated as experiments
 
 | ID | Risk | Severity | Settled by | Status |
 | --- | --- | --- | --- | --- |
-| R1 | A contract cannot create and own an FWA pool (fee token, beta gate, one pool per wallet) | High | E1 | Open |
-| R2 | Draws survived cannot be counted from FWA state without trusting a keeper | High | E3 | Open |
-| R3 | Public purchases keep the queue unsettled, blocking withdrawal, composition and repricing indefinitely | High | E4 | Open |
-| R4 | A Black Check is unreachable: 64 singles in one call may not fit in a block, and 4,096 units may be unaffordable | High | E5, Phase 3 | Open |
-| R5 | Pair composition is too expensive per tier for routine keeper execution | Medium | E6 | Open |
-| R6 | Edition migration and epoch reveal leave newly minted Originals with undefined art when listed | Medium | E7 | Open |
-| R7 | Repricing for decay collides with in-flight draws and FWA cooldown, or gets stale | Medium | E8 | Open |
-| R8 | Refund, expiry, slippage and failed-delivery paths credit false survival or strand NFTs | High | E9 | Open |
+| R1 | A contract cannot create and own an FWA pool (fee token, beta gate, one pool per wallet) | High | E1 | Closed: a contract creates and permanently owns its pool; one pool per controller. Production must buy the 50,000 FWA fee (transfer-locked token; ~0.164 ETH via FWA's v4 pool in collection-games) |
+| R2 | Draws survived cannot be counted from FWA state without trusting a keeper | High | E3 | Closed: `SurvivalCursor` counts from `requestIdAtSequence`/`acquisitions`, ~29k gas per sequence; see D002 |
+| R3 | Public purchases keep the queue unsettled, blocking withdrawal, composition and repricing indefinitely | High | E4 | Closed: `setBool(ACQUISITIONS_ENABLED,false)` stops new draws without touching quotes; the queue drains within 30 blocks plus a permissionless `processAcquisitions` |
+| R4 | A Black Check is unreachable: 64 singles in one call may not fit in a block, and 4,096 units may be unaffordable | High | E5, Phase 3 | Gas closed: `infinity` on 64 real singles uses 742,242 gas. Economics open (D001) |
+| R5 | Pair composition is too expensive per tier for routine keeper execution | Medium | E6 | Closed: 165k-200k gas per pair, 78k for 4 -> 1 |
+| R6 | Edition migration and epoch reveal leave newly minted Originals with undefined art when listed | Medium | E7 | Closed: mint 169k gas; art fixed after the epoch's reveal block (51 blocks) once anyone calls `resolveEpochIfNecessary`. Rule: list only revealed Originals |
+| R7 | Repricing for decay collides with in-flight draws and FWA cooldown, or gets stale | Medium | E8 | Mechanics closed: reprice needs an empty queue, bumps `inventoryVersion` (stale quotes revert), keeps the listing ID and its episode; cooldown is 0 today but factory-set. Stale-market policy open (R9) |
+| R8 | Refund, expiry, slippage and failed-delivery paths credit false survival or strand NFTs | High | E9 | Closed for expiry, late word and slippage (no credit, purchaser pull refund). Failed delivery not reproducible with Checks or Shapes (plain `transferFrom`, delivered within FWA's 150k stipend); FWA's 7-day refund and `recoverRefundedNFT` remain the path |
 | R9 | No trustless onchain price for Checks: initial notional, buyouts and acquisition limits rely on signers | High | Phase 3 design | Open |
 | R10 | Owner extraction through upgrade, migration, pricing, marketplace routes or approvals | Critical | Phase 2 | Open |
 | R11 | FWA factory owner changes edge, cooldown, global switches or the pool implementation | Medium | E2, Phase 2 | Open |
 | R12 | Trading-fee capture for the coin on a real venue (Uniswap v4 hook) is unproven in this repo | Medium | Phase 4 | Open |
 | R13 | Name or legal exposure: paid chance draws for NFTs; confusion with the existing Black Check / BLKCHK | High | Legal review | Open (not technical) |
+
+## Phase 1 receipts (block 26,302,000, real contracts)
+
+`forge test --match-path 'test/fork/*.t.sol'`: 12 passed, 0 failed (Pins 3, Lifecycle 5, BlackCheck 3, Editions 1).
+Setup cheats, stated once: FWA creation fee written with `deal`; real holders impersonated to move tokens into the test
+vault; VRF words delivered by impersonating the Chainlink coordinator into FWA's real VRF service.
+
+| Measurement | Value |
+| --- | --- |
+| `infinity` on 64 real singles (execution) | 742,242 gas |
+| `composite` per tier 80->40, 40->20, 20->10, 10->5, 5->4, 4->1 (avg) | 195,292 / 166,531 / 165,043 / 165,534 / 166,707 / 77,773 |
+| Edition `mint` to a contract vault | 169,088 gas; reveal 51 blocks later |
+| Survival cursor | 144,172 gas for 5 sequences |
+| Draw fee, 3 Checks at 1 ETH + 2 Shapes at 0.01 ETH | 0.02586 ETH plus VRF 0.00195 ETH at 1 gwei (VRF scales with gas price) |
 
 ## Experiments (Phase 1, mainnet fork, real contracts)
 

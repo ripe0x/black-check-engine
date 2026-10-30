@@ -24,6 +24,24 @@ Action taken: none yet. Phase 3 simulation will size the budget each route needs
 Reversibility: messaging and acquisition policy only; no code committed.
 Owner action: Optional review.
 
+### D002: Count a draw as survived when FWA allocated a prize, not when delivery completed
+Status: REVIEW
+Importance: Medium
+Why it came up: Building the survival cursor against the real FWA clone (E3). The spec says DeliveryRefunded earns no
+credit and DeliveryPending must be resolved first. FWA leaves a failed delivery pending until the winner calls
+`refundFailedDelivery` after 7 days, and only the winner can; it may never happen.
+Desired outcome: survival means a Check stayed in the pool through real, paid selections, and nobody can fake it.
+Options considered: (a) count at processing when FWA allocated a prize (Fulfilled, DeliveryPending, DeliveryRefunded);
+(b) the spec as written: block the cursor on DeliveryPending and skip DeliveryRefunded, so one stuck delivery can stop
+counting for every Check indefinitely; (c) skip unresolved deliveries and never revisit them.
+Recommended choice: (a). The selection is final at processing; delivery concerns only the winner. Delivery failure is
+not reproducible with Checks or Shapes (plain `transferFrom`, well inside FWA's 150k stipend), so (a) and (b) differ
+only in a path nobody can trigger cheaply, and (a) has no liveness hole.
+Tradeoff: in the theoretical failed-delivery case, a refunded draw still counts as survived.
+Action taken: `src/game/SurvivalCursor.sol`, fork-tested in `test/fork/Lifecycle.t.sol` (E3, E4, E8).
+Reversibility: one condition in `advance`.
+Owner action: Optional review.
+
 Use this template:
 
 ### D001: Short question
@@ -51,6 +69,15 @@ Record important noncontroversial implementation choices with evidence and commi
 - C003 Primary evidence: verified sources vendored read-only under `external/` (Checks Originals, Checks Editions
   proxy, Shapes and BLKCHK from Sourcify; FWA factory, clone and VRF service from collection-games, which fetched them
   from Blockscout with bytecode parity). Runtime code hashes are asserted in `test/fork/Pins.t.sol`.
+- C004 Survival episodes are FWA listing IDs. An episode starts only when the queue is empty and the cursor is caught
+  up (FWA then activates the listing immediately). Repricing keeps the listing ID and the episode; withdrawal, a win or
+  relisting ends it. Evidence: E3, E4, E8.
+- C005 Maintenance (composition, decay repricing) runs only with an empty FWA queue. When draws are in flight the
+  controller first switches FWA purchases off (`setBool`, which leaves `inventoryVersion` and quotes alone); the queue
+  drains within `selectionTimeoutBlocks` (30) plus permissionless processing. No custom pause layer. Evidence: E4.
+- C006 Players buy directly from FWA (`acquire`/`acquireBatch`); no protocol draw router, so there is no router to
+  bypass. A purchase operator is not needed for pausing. Revisit only if a gate on in-flight requests is required.
+- C007 Newly migrated Originals are listed only after their epoch is revealed (51 blocks after mint). Evidence: E7.
 
 ## FOUNDATIONAL COMMITMENTS
 Follow the constraints in CLAUDE.md. If a real technical constraint conflicts with one, document it and recommend the simplest alternative while advancing independent work.
