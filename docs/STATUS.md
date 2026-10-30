@@ -1,7 +1,8 @@
 # Current execution status
 
-Stage: Phase 2 complete (independent review resolved). Phase 3 model complete. Phase 4 (minimum complete
-protocol) next.
+Stage: Phase 4 in progress. Engine lifecycle (decay, coin-paid composition, buyouts, standing bid, Shape
+restock) and the deployment path are built and fork-tested. Running now: independent review of the Phase 4 engine;
+coin venue port (Uniswap v4 fee route) by a builder subagent.
 Branch: `dev` (local). Latest milestone commit: see `git log`.
 
 ## Pinned environment
@@ -24,10 +25,17 @@ Branch: `dev` (local). Latest milestone commit: see `git log`.
 - Phase 2 review: docs/review/phase2-security-review.md (no Critical/High/Medium; Low fixes applied). Survival now
   derived in O(1) from FWA's active count (C010); `SurvivalCursor` removed. Shapes list at backing + 10% (D004).
 - Phase 3 (fc1aa5e): `sim/model.py`, `sim/results/phase3.md`, `docs/ECONOMICS.md` (D004, D005).
+- Phase 2 review fixes and C010 (e2df42e).
+- Phase 4a (bf6034f): `src/token/Coin.sol`; Engine decay, compose with coin burn and free fallback (D008), ETH and
+  coin buyouts (D006), standing bid for Checks and Editions (D007), Shape restock, reentrancy lock; via_ir (C011).
+- Deployment (83a0d72): `script/DeploySystem.sol` (one routine + postflight), `script/LaunchConfig.sol`,
+  `script/Deploy.s.sol` (simulation by default).
 
 ## Evidence and test results
-- `forge test --match-path 'test/fork/*.t.sol'` at block 26,302,000: 25 passed, 0 failed (Pins 3, Lifecycle 5,
-  BlackCheck 3, Editions 1, Custody 10, Migration 3).
+- `forge test --match-path 'test/fork/*.t.sol'` at block 26,302,000 (bf6034f): 35 passed, 0 failed (Pins 3,
+  Lifecycle 5, BlackCheck 3, Editions 1, Custody 10, Migration 3, Market 10). Deploy.t.sol: 2 passed (83a0d72).
+- `forge script script/Deploy.s.sol` simulated on the pinned fork with placeholder role addresses: postflight
+  passed, 11,381,870 gas. Nothing broadcast.
 - `python3 sim/model.py`: 17 scenarios x 60 seeded runs, results in sim/results/phase3.md (model, not evidence). Real mainnet contracts; setup cheats listed in docs/RISKS.md
   "Phase 1 receipts". `NextGenControllerMock` in Migration.t.sol is a labeled mock, not evidence about a real future
   FWA version.
@@ -38,14 +46,19 @@ Branch: `dev` (local). Latest milestone commit: see `git log`.
 None.
 
 ## Next executable action
-Phase 4: decay repricing in the engine (D005), manual composition with a BLACK burn, ETH and BLACK buyouts, BLACK
-token and fee venue (R12), restricted acquisition path and FWA fee purchase, then keeper, unit/fuzz/invariant tests
-and an independent review of the Phase 4 diff (including C010).
+Resolve Phase 4 review findings; integrate the venue (review its diff, fork tests, commit); route SystemBase through
+DeploySystem; FWA creation-fee purchase route; keeper; fuzz and invariant tests; minimal UI; Phase 4 docs.
+
+## Open items (not yet built)
+- Keepers are unpaid; maintenance relies on the operator or volunteers.
+- Game surplus has no exit yet (no coin buy-and-burn until the venue exists).
+- The 50,000 FWA pool-creation fee must be bought into the controller (FWA is transfer-locked).
 
 ## Review queue
 docs/DECISIONS.md: D001 (Black Check needs 25.6% of all possible Check units), D002 (survival counts allocating
 draws at processing), D003 (tier schedule pricing instead of signed quotes), D004
-(Shape markup), D005 (decay floor near player break-even).
+(Shape markup), D005 (decay floor near player break-even), D006 (coin buyouts from a timelocked
+coin schedule), D007 (standing bid instead of marketplace orders), D008 (composition window in draws).
 
 ## Continuity protocol
 After each meaningful increment, update this file with phase, completed work, exact commands and test outcomes, risks,
