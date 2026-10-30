@@ -3,13 +3,14 @@ pragma solidity 0.8.28;
 
 import {ForkBase} from "./ForkBase.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IFWAPool} from "../../src/interfaces/IFWA.sol";
 import {IController} from "../../src/interfaces/IController.sol";
 import {IChecksOriginals} from "../../src/interfaces/IChecks.sol";
 import {Engine, IShapesBacking, ICoinBurn} from "../../src/core/Engine.sol";
 import {Coin} from "../../src/token/Coin.sol";
 import {FwaV2Controller} from "../../src/fwa/FwaV2Controller.sol";
+import {DeploySystem} from "../../script/DeploySystem.sol";
+import {LaunchConfig} from "../../script/LaunchConfig.sol";
 
 interface IShapesMintTo {
     function mintBatchTo(uint256 amountWei, uint256 quantity, address to)
@@ -19,11 +20,11 @@ interface IShapesMintTo {
     function mintFee() external view returns (uint256);
 }
 
-/// @dev The deployed system on the pinned fork: OZ timelock (council proposes, guardian also cancels, anyone executes
-///      after 7 days, self-administered), the engine behind an ERC1967 proxy, and one FWA V2 controller with its
-///      pool. Setup cheats: the FWA creation fee is written to the controller with `deal`; real Check holders are
-///      impersonated to move tokens into the engine; VRF words come through FWA's real service.
-abstract contract SystemBase is ForkBase {
+/// @dev The deployed system on the pinned fork, built by the production routine (script/DeploySystem.sol) with test
+///      schedule values, and checked by its postflight. Setup cheats: the FWA creation fee is written to the controller with `deal`; real Check holders are
+///      impersonated to move tokens into the engine; coin for tests is taken from the unlaunched venue contract; VRF words
+///      come through FWA's real service.
+abstract contract SystemBase is ForkBase, DeploySystem {
     uint256 internal constant DELAY = 7 days;
     uint256 internal constant SHAPE_BACKING = 0.01 ether;
     uint16 internal constant MARKUP = 1000;
@@ -47,41 +48,25 @@ abstract contract SystemBase is ForkBase {
         super.setUp();
         vm.txGasPrice(1 gwei);
 
-        address[] memory proposers = new address[](1);
-        proposers[0] = council;
-        address[] memory executors = new address[](1); // address(0): anyone executes after the delay
-        timelock = new TimelockController(DELAY, proposers, executors, address(this));
-        timelock.grantRole(timelock.CANCELLER_ROLE(), guardian);
-        timelock.renounceRole(timelock.DEFAULT_ADMIN_ROLE(), address(this));
-
-        coin = new Coin("Placeholder Coin", "BLACK", 1_000_000_000 ether, address(this));
-        Engine impl = new Engine(CHECKS, EDITIONS, IShapesBacking(SHAPES), ICoinBurn(address(coin)));
-        address enginePredicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
-        controller = _newController(enginePredicted, "pool-1");
-        engine = Engine(
-            payable(
-                address(
-                    new ERC1967Proxy(
-                        address(impl),
-                        abi.encodeCall(
-                            Engine.initialize,
-                            (
-                                address(timelock),
-                                operator,
-                                guardian,
-                                IController(address(controller)),
-                                _tiers(),
-                                _thresholds(),
-                                _composeBurn(),
-                                _coinPrice(),
-                                _params()
-                            )
-                        )
-                    )
-                )
-            )
-        );
-        assertEq(address(engine), enginePredicted);
+        Config memory c = LaunchConfig.mainnet();
+        c.council = council;
+        c.guardian = guardian;
+        c.operator = operator;
+        c.poolSalt = "pool-1";
+        c.tierNotional = _tiers();
+        c.drawsToCompose = _thresholds();
+        c.composeBurn = _composeBurn();
+        c.coinPrice = _coinPrice();
+        c.params = _params();
+        System memory s = deploySystem(c, address(this), address(this));
+        postflight(s, c, address(this));
+        timelock = s.timelock;
+        coin = s.coin;
+        engine = s.engine;
+        controller = s.controller;
+        // Setup only: take coin for tests from the unlaunched venue contract that holds the whole supply.
+        vm.prank(address(s.liquidity));
+        coin.transfer(address(this), 100_000_000 ether);
         deal(FWA_TOKEN, address(controller), FWA_FACTORY.poolCreationFee());
         engine.openPool();
         pool = controller.pool();
