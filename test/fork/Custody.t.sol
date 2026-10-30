@@ -8,12 +8,13 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
 import {IFWAPool} from "../../src/interfaces/IFWA.sol";
 import {IController} from "../../src/interfaces/IController.sol";
 import {IChecksOriginals} from "../../src/interfaces/IChecks.sol";
-import {Engine, IShapesBacking} from "../../src/core/Engine.sol";
+import {Engine, IShapesBacking, ICoinBurn} from "../../src/core/Engine.sol";
+import {IChecksEdition} from "../../src/interfaces/IChecks.sol";
 import {FwaV2Controller} from "../../src/fwa/FwaV2Controller.sol";
 
 /// @dev Test-only malicious upgrade: what a council majority could install after the delay (residual trust A11).
 contract DrainEngine is Engine {
-    constructor(IChecksOriginals c, IShapesBacking s) Engine(c, s) {}
+    constructor(IChecksOriginals c, IChecksEdition e, IShapesBacking s, ICoinBurn k) Engine(c, e, s, k) {}
 
     function drain(address to, uint256 shapeId) external {
         shapes.transferFrom(address(this), to, shapeId);
@@ -41,7 +42,7 @@ contract CustodyTest is SystemBase {
         vm.expectRevert(Engine.NotTimelock.selector);
         engine.setController(IController(address(0xdead)));
         vm.expectRevert(Engine.NotTimelock.selector);
-        engine.setSchedule(_tiers(), _thresholds());
+        engine.setSchedule(_tiers(), _thresholds(), _composeBurn(), _coinPrice());
         vm.expectRevert(Engine.NotTimelock.selector);
         engine.setOperator(operator);
         vm.expectRevert(Engine.NotTimelock.selector);
@@ -135,13 +136,18 @@ contract CustodyTest is SystemBase {
         vm.prank(keeper);
         vm.expectRevert(Engine.QueueBusy.selector);
         engine.compose(checkIds[0], checkIds[1], false);
-        vm.roll(block.number + 31);
+        vm.roll(vm.getBlockNumber() + 31);
         pool.processAcquisitions(10); // the pending draw expires; its player is refunded by FWA
         (,,,, IFWAPool.AcquisitionStatus st) = pool.acquisitions(pending);
         assertEq(uint8(st), uint8(IFWAPool.AcquisitionStatus.Expired));
 
+        // Before the grace period, composing burns the tier's coin from whoever composes (a keeper here).
+        coin.transfer(keeper, 100 ether);
+        vm.prank(keeper);
+        coin.approve(address(engine), 100 ether);
         vm.prank(keeper);
         engine.compose(checkIds[0], checkIds[1], false);
+        assertEq(coin.balanceOf(keeper), 0, "burned exactly composeBurn[0]");
         assertEq(CHECKS.getCheck(checkIds[0]).stored.divisorIndex, 1);
         assertEq(CHECKS.ownerOf(checkIds[0]), address(pool), "survivor relisted");
         (,,,,, uint256 price,,) = pool.listings(_checkListing(checkIds[0]));
@@ -198,19 +204,19 @@ contract CustodyTest is SystemBase {
         _drawSelecting(pool, _shapeListing(shapeIds[0]));
         _drawSelecting(pool, _shapeListing(shapeIds[1]));
         engine.compose(checkIds[0], checkIds[1], false); // survivor relisted; withdraw path exercised
-        address evil = address(new DrainEngine(CHECKS, IShapesBacking(SHAPES)));
+        address evil = address(new DrainEngine(CHECKS, EDITIONS, IShapesBacking(SHAPES), ICoinBurn(address(coin))));
         bytes memory data = abi.encodeCall(UUPSUpgradeable.upgradeToAndCall, (evil, ""));
 
         vm.prank(council);
         timelock.schedule(address(engine), 0, data, bytes32(0), bytes32("evil"), DELAY);
-        vm.warp(block.timestamp + DELAY - 1);
+        vm.warp(vm.getBlockTimestamp() + DELAY - 1);
         vm.expectRevert();
         timelock.execute(address(engine), 0, data, bytes32(0), bytes32("evil"));
 
         bytes32 id = timelock.hashOperation(address(engine), 0, data, bytes32(0), bytes32("evil"));
         vm.prank(guardian);
         timelock.cancel(id);
-        vm.warp(block.timestamp + 1);
+        vm.warp(vm.getBlockTimestamp() + 1);
         vm.expectRevert();
         timelock.execute(address(engine), 0, data, bytes32(0), bytes32("evil"));
 

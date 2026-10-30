@@ -8,8 +8,8 @@ Mechanics reproduced from verified sources and fork tests:
 - Survival: every draw that allocates a prize adds one survived draw to every listed Check that was not selected
   (src/game/SurvivalCursor.sol). Composition needs both Checks at `threshold` (Engine.drawsToCompose).
 - Listing price per tier from a schedule the timelock updates (D003): here re-set to the market every `review_days`,
-  effective 7 days later. Decay multiplies a Check's notional by (1 - decay) per survived draw down to `floor` of the
-  schedule, applied in batches (FWA repricing needs an empty queue; each reprice costs gas).
+  effective 7 days later. Decay lowers a Check's notional by `decay` of the schedule per survived draw, linearly, down
+  to `floor` of the schedule (Engine._notional), applied in batches (FWA repricing needs an empty queue; gas).
 - Shapes list at backing * (1 + shape_markup); a won Shape costs its backing plus the 0.001 ETH Shapes mint fee to
   replace.
 - Trading fees on the coin (volume * fee share) fund Checks purchases at the market price of an 80 plus 5% slippage
@@ -140,7 +140,7 @@ class Run:
             self.since_reprice = 0
             n = 0
             for c in self.checks:
-                m = max(self.P["floor"], (1 - self.P["decay"]) ** c["s"])
+                m = max(self.P["floor"], 1 - self.P["decay"] * c["s"])
                 if m < c["mult"]:
                     c["mult"] = m
                     n += 1
@@ -188,7 +188,7 @@ class Run:
             self.sched = self.pending_sched[1]
             self.pending_sched = None
             for c in self.checks:  # a schedule change is a fresh price; decay restarts from the new schedule
-                c["mult"] = max(P["floor"], (1 - P["decay"]) ** c["s"])
+                c["mult"] = max(P["floor"], 1 - P["decay"] * c["s"])
             self.dirty = True
         # coin fees buy 80s
         L = self.ledger

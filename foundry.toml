@@ -8,6 +8,8 @@ solc_version = "0.8.28"
 evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
+# via_ir keeps Engine under EIP-170 (20.4 KB vs 24.7 KB without it, C011).
+via_ir = true
 bytecode_hash = "none"
 cbor_metadata = false
 auto_detect_remappings = false

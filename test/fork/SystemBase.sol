@@ -7,7 +7,8 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IFWAPool} from "../../src/interfaces/IFWA.sol";
 import {IController} from "../../src/interfaces/IController.sol";
 import {IChecksOriginals} from "../../src/interfaces/IChecks.sol";
-import {Engine, IShapesBacking} from "../../src/core/Engine.sol";
+import {Engine, IShapesBacking, ICoinBurn} from "../../src/core/Engine.sol";
+import {Coin} from "../../src/token/Coin.sol";
 import {FwaV2Controller} from "../../src/fwa/FwaV2Controller.sol";
 
 interface IShapesMintTo {
@@ -36,6 +37,7 @@ abstract contract SystemBase is ForkBase {
 
     TimelockController internal timelock;
     Engine internal engine;
+    Coin internal coin;
     FwaV2Controller internal controller;
     IFWAPool internal pool;
     uint256 internal nextScan = 1;
@@ -52,7 +54,8 @@ abstract contract SystemBase is ForkBase {
         timelock.grantRole(timelock.CANCELLER_ROLE(), guardian);
         timelock.renounceRole(timelock.DEFAULT_ADMIN_ROLE(), address(this));
 
-        Engine impl = new Engine(CHECKS, IShapesBacking(SHAPES));
+        coin = new Coin("Placeholder Coin", "BLACK", 1_000_000_000 ether, address(this));
+        Engine impl = new Engine(CHECKS, EDITIONS, IShapesBacking(SHAPES), ICoinBurn(address(coin)));
         address enginePredicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
         controller = _newController(enginePredicted, "pool-1");
         engine = Engine(
@@ -62,7 +65,17 @@ abstract contract SystemBase is ForkBase {
                         address(impl),
                         abi.encodeCall(
                             Engine.initialize,
-                            (address(timelock), operator, guardian, IController(address(controller)), _tiers(), _thresholds(), MARKUP)
+                            (
+                                address(timelock),
+                                operator,
+                                guardian,
+                                IController(address(controller)),
+                                _tiers(),
+                                _thresholds(),
+                                _composeBurn(),
+                                _coinPrice(),
+                                _params()
+                            )
                         )
                     )
                 )
@@ -74,6 +87,7 @@ abstract contract SystemBase is ForkBase {
         pool = controller.pool();
         vm.prank(guardian);
         engine.resume();
+        coin.approve(address(engine), type(uint256).max); // this test contract holds the supply and may pay burns
     }
 
     function _newController(address engine_, bytes32 salt) internal returns (FwaV2Controller) {
@@ -88,13 +102,34 @@ abstract contract SystemBase is ForkBase {
         d = [uint32(2), 2, 2, 2, 2, 2, 2];
     }
 
+    function _composeBurn() internal pure returns (uint256[7] memory b) {
+        b = [uint256(100 ether), 200 ether, 400 ether, 800 ether, 1600 ether, 3200 ether, 6400 ether];
+    }
+
+    function _coinPrice() internal pure returns (uint256[8] memory c) {
+        c = [uint256(10_000 ether), 20_000 ether, 40_000 ether, 80_000 ether, 160_000 ether, 320_000 ether, 640_000 ether, 0];
+    }
+
+    function _params() internal pure returns (Engine.Params memory) {
+        return Engine.Params({
+            shapeMarkupBps: MARKUP,
+            decayBpsPerDraw: 20,
+            floorBps: 8500,
+            repriceStepBps: 500,
+            graceDraws: 3,
+            buyoutMarkupBps: 2000,
+            bidBps: 9000,
+            bidWeeklyCap: 10 ether
+        });
+    }
+
     // ------------------------------------------------------------------ governance
 
     function _govern(address target, bytes memory data) internal {
         bytes32 s = bytes32(++opSalt);
         vm.prank(council);
         timelock.schedule(target, 0, data, bytes32(0), s, DELAY);
-        vm.warp(block.timestamp + DELAY);
+        vm.warp(vm.getBlockTimestamp() + DELAY);
         timelock.execute(target, 0, data, bytes32(0), s);
     }
 
@@ -151,16 +186,16 @@ abstract contract SystemBase is ForkBase {
     /// @dev One draw at `p` that selects `listingId`, settled.
     function _drawSelecting(IFWAPool p, uint256 listingId) internal returns (uint256 requestId) {
         requestId = _pullAt(p);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(requestId, _wordFor(p, listingId));
         p.processAcquisitions(10);
     }
 
     function _shapeListing(uint256 shapeId) internal view returns (uint256 listingId) {
-        (, listingId) = engine.shapeListing(shapeId);
+        (, listingId,) = engine.shapeListing(shapeId);
     }
 
     function _checkListing(uint256 tokenId) internal view returns (uint256 listingId) {
-        (, listingId) = engine.checkListing(tokenId);
+        (, listingId,) = engine.checkListing(tokenId);
     }
 }

@@ -90,14 +90,67 @@ value; with 20 Checks among 57 listings, players break even with every Check at 
 subsidy on each Check won and invites arbitrage draws.
 Desired outcome: long survivors become more winnable (the spec's decay promise) without turning the pool into a
 giveaway.
-Options considered: (a) floor 85%, 0.2% per survived draw; (b) deep decay to 25% (subsidy 25 ETH over two years
+Options considered: (a) floor 85%, 0.2% per survived draw; (b) deep decay to 25% (subsidy 32 ETH over two years
 and arbitrage draws); (c) no decay (subsidy ≈ 0, but survivors never gain odds).
 Recommended choice: (a), reviewed with the schedule. Decay then mostly shifts odds among prizes.
 Tradeoff: a long-surviving Check gains at most ~1/0.85 = 18% more weight, a modest effect.
-Action taken: modelled ("Recommended" scenario, subsidy 4.4 ETH, P(single) 27%). Decay is not in the engine yet
-(Phase 4).
+Action taken: modelled ("Recommended" scenario, subsidy 4.5 ETH, P(single) 27%). Implemented: `Engine.reprice`
+(permissionless, linear to the floor, 5% step), `test/fork/Market.t.sol`.
 Reversibility: timelocked parameters.
 Owner action: Required before finalization.
+
+### D006: Price coin buyouts from a timelocked coin schedule, not a market oracle
+Status: REVIEW
+Importance: High
+Why it came up: Phase 4. The spec asks for a manipulation-resistant coin-to-ETH conversion. The coin's venue is not
+built yet, a Uniswap v4 pool has no built-in TWAP, and a spot price is manipulable within one transaction.
+Desired outcome: collectors can retire a Check by burning coin at a premium, and nobody can make that cheap.
+Options considered: (a) a per-tier coin price set through the timelock (zero = disabled), with the guardian able to
+halt; (b) an onchain TWAP from a v4 oracle hook (more code, a new dependency, still manipulable on thin liquidity);
+(c) no coin buyouts until (b) exists.
+Recommended choice: (a), launched disabled (all zero) and enabled per tier only once the coin trades with real
+depth, at a premium the council sets.
+Tradeoff: a coin crash between schedule updates makes buyouts cheaper in ETH terms until the guardian halts or the
+council raises the price; the protocol then gives up inventory for less than intended.
+Action taken: `Engine.coinPrice`, `buyWithCoin` (burn via allowance, atomic); `test/fork/Market.t.sol`.
+Reversibility: timelocked parameter; an oracle path can be added by upgrade.
+Owner action: Required before finalization.
+
+### D007: Acquire Checks through a standing bid, not keeper-executed marketplace orders
+Status: REVIEW
+Importance: High
+Why it came up: Phase 4. The spec's keeper-proposed marketplace purchases need a restricted marketplace adapter
+(Seaport order validation, target allowlists, quote age) and still trust the keeper to choose the order.
+Desired outcome: coin fees turn into Checks without anyone choosing what to pay.
+Options considered: (a) anyone sells a Check or Edition to the engine at the published bid (schedule × 90%), paid
+only from the acquisition budget, within a weekly ETH cap; (b) a Seaport adapter executing listed orders below a
+cap; (c) both.
+Recommended choice: (a). No adapter, no keeper discretion, no approvals; Editions are migrated in the same call.
+Every tier with a schedule price has a bid, which also lets the protocol source singles for the Black route (D001).
+Tradeoff: the protocol buys only from willing sellers at its bid, so it does not lift cheaper asks; a stale-high
+schedule after a crash lets sellers sell at above-market prices until the next schedule update, bounded by the
+weekly cap and the guardian halt.
+Action taken: `Engine.sellCheck`, `sellEdition`, `fundAcquisitions`, `acquisitionBudget`; fork-tested on real Checks
+and a real Edition (`test/fork/Market.t.sol`).
+Reversibility: an adapter can be added by upgrade.
+Owner action: Required before finalization.
+
+### D008: Measure the composition decision window in draws, not time
+Status: REVIEW
+Importance: Medium
+Why it came up: Phase 4. The spec gives participants a short time window to compose by choice (burning coin) before
+a keeper's free deterministic fallback. Eligibility is derived from FWA state, so there is no recorded moment when a
+Check became eligible.
+Desired outcome: people who pay can choose survivors and visuals first; the game still progresses if nobody pays.
+Options considered: (a) free fallback once both Checks have survived `graceDraws` more than the threshold, with the
+deterministic survivor (more draws, then lower ID) and no swap; anything else burns `composeBurn[tier]`; (b) store an
+eligibility timestamp per Check, which needs a permissionless "mark eligible" step and more state.
+Recommended choice: (a). The window then scales with play, like everything else in the game.
+Tradeoff: in a quiet pool the paid window lasts longer in wall-clock time.
+Action taken: `Engine.compose`, `formBlack`; burn after the canonical call in the same transaction, so any failure
+burns nothing (`test/fork/Market.t.sol`).
+Reversibility: one condition.
+Owner action: Optional review.
 
 Use this template:
 
@@ -140,6 +193,12 @@ Record important noncontroversial implementation choices with evidence and commi
   Allocations = listed − withdrawn − `activeListingCount()`. Same semantics as the draw-by-draw cursor (D002), O(1),
   no keeper gas per draw. `SurvivalCursor` removed. Evidence: `test/fork/Lifecycle.t.sol` E3 asserts the active-count
   identity on the real pool; `Custody.t.sol` exercises it through the engine.
+- C011 Build with `via_ir` (Engine 20.4 KB, under EIP-170; 24.7 KB without it). Under via_ir, tests read the clock
+  with `vm.getBlockNumber()` / `vm.getBlockTimestamp()`, because `block.number` and `block.timestamp` are cached
+  within a test function.
+- C012 Phase 4 outflows are bounded by rule: bids only from `acquisitionBudget` within a weekly cap; Shape restocking
+  only for Shapes FWA gave to a winner, at their recorded backing, from game capital; buyouts at published prices.
+  Value-moving functions share a reentrancy lock. Keepers are not paid yet (open item).
 - C008 Governance from stock parts: OpenZeppelin `TimelockController` (council the only proposer, guardian an
   extra canceller, open execution, self-administered, 7-day delay) and an ERC1967/UUPS engine whose upgrades, role
   changes, schedule and controller changes are timelock-only. Operator powers: halt only. Guardian: halt, resume,

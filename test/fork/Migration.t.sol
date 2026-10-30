@@ -98,7 +98,7 @@ contract MigrationTest is SystemBase {
         // The pending draw blocks migration of inventory; it cannot be cancelled or redirected.
         vm.expectRevert(Engine.QueueBusy.selector);
         engine.migrateChecks(address(controller), checkIds);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(pending, _wordFor(pool, _shapeListing(shapeIds[1])));
         pool.processAcquisitions(10);
         assertEq(IERC721T(SHAPES).ownerOf(shapeIds[1]), player, "the pending player still wins");

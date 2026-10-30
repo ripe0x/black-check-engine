@@ -36,14 +36,14 @@ NFT Duck and OKX listings; recheck before any decision).
 | Parameter | Proposal | Why |
 | --- | --- | --- |
 | Shape notional | backing × 1.10 | covers the 0.001 ETH mint fee and adds margin (D004) |
-| Decay | 0.2% per survived draw, floor 85% of schedule | stays above the player break-even bound (D005) |
+| Decay | 0.2% of schedule per survived draw (linear), floor 85% | stays above the player break-even bound (D005) |
 | Survival threshold | 100 draws per tier, 200 for Black | P(single in 2 years) 27% in the base case |
 | Tier schedule | units × floor price, reviewed monthly, 7-day timelock | D003 |
 | Purchases | 80s at most 3 per week until depth is measured | thin market |
 | Coin fee share | 1% of volume to the protocol (placeholder) | venue and rate are Phase 4 (R12) |
 
-Base-case result with these values: game P&L +11.1 ETH over two years (p10 −2.6, p90 +19.0), subsidy 4.4 ETH,
-157 Checks won by players, 169 compositions, median best tier 4 Checks.
+Base-case result with these values: game P&L +11.1 ETH over two years (p10 −2.6, p90 +19.0), subsidy 4.5 ETH,
+158 Checks won by players, 169 compositions, median best tier 4 Checks.
 
 ## Sensitivities (medians, 2 years)
 

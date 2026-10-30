@@ -181,7 +181,7 @@ contract LifecycleTest is ForkBase {
         uint256 requestId = _pull();
         assertEq(uint8(_status(requestId)), uint8(IFWAPool.AcquisitionStatus.Pending));
 
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(requestId, _wordFor(checkListings[1]));
         pool.processAcquisitions(10);
 
@@ -210,20 +210,20 @@ contract LifecycleTest is ForkBase {
 
         // 1: fills (a Shape). Counts.
         uint256 r1 = _pull();
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r1, _wordFor(shapeListings[0]));
         pool.processAcquisitions(10);
         assertEq(uint8(_status(r1)), uint8(IFWAPool.AcquisitionStatus.Fulfilled));
 
         // 2: no word within 30 blocks, expires. Does not count.
         uint256 r2 = _pull();
-        vm.roll(block.number + 31);
+        vm.roll(vm.getBlockNumber() + 31);
         pool.processAcquisitions(10);
         assertEq(uint8(_status(r2)), uint8(IFWAPool.AcquisitionStatus.Expired));
 
         // 3: the word arrives after the deadline. Does not count.
         uint256 r3 = _pull();
-        vm.roll(block.number + 31);
+        vm.roll(vm.getBlockNumber() + 31);
         deliverWord(r3, 7);
         pool.processAcquisitions(10);
         assertEq(uint8(_status(r3)), uint8(IFWAPool.AcquisitionStatus.Expired));
@@ -231,7 +231,7 @@ contract LifecycleTest is ForkBase {
         // 4 and 5 on the same quote: 4 takes a cheap Shape, the fee rises >10%, so 5 refunds on slippage.
         uint256 r4 = _pull();
         uint256 r5 = _pull();
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r5, 1);
         deliverWord(r4, _wordFor(shapeListings[1]));
         pool.processAcquisitions(10);
@@ -276,7 +276,7 @@ contract LifecycleTest is ForkBase {
         lab.exec(address(pool), abi.encodeCall(IFWAPool.withdrawListingsTo, (checkListings, address(lab))));
 
         // The pending draw settles normally (its player keeps the entitlement).
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r1, _wordFor(shapeListings[0]));
         pool.processAcquisitions(10);
         assertEq(uint8(_status(r1)), uint8(IFWAPool.AcquisitionStatus.Fulfilled));
@@ -298,7 +298,7 @@ contract LifecycleTest is ForkBase {
 
         _enable(true);
         uint256 r2 = _pull();
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r2, _wordFor(shapeListings[1]));
         pool.processAcquisitions(10);
         assertEq(_survived(relisted[0]), 1);
@@ -315,7 +315,7 @@ contract LifecycleTest is ForkBase {
         vm.expectRevert(bytes4(keccak256("WithdrawLocked()")));
         lab.exec(address(pool), abi.encodeCall(IFWAPool.updatePrice, (checkListings[0], CHECK_PRICE / 2)));
 
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r1, _wordFor(shapeListings[0]));
         pool.processAcquisitions(10);
 
