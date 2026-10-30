@@ -54,6 +54,8 @@ Scope: custody of Checks, Shapes and ETH; upgrades; FWA pool migration. Testing 
 2. Approving a new controller hands it every NFT the engine lists there. The council's review of that controller's
    code (no generic call, recipients fixed to the engine, pinned pool implementation) is the migration's security
    boundary.
-3. Council independence is an offchain fact (who holds the keys). The contracts cannot verify it.
-4. FWA's code and its factory owner are trusted for listed inventory and player funds.
-5. Canonical Checks is trusted for composition and artwork.
+3. Approving a burner (`Engine.setBurner`) sends it all released surplus. The council checks that `Burner.venue()`
+   is the canonical `VenueLiquidity` before approving; the Burner reads its pool from that contract.
+4. Council independence is an offchain fact (who holds the keys). The contracts cannot verify it.
+5. FWA's code and its factory owner are trusted for listed inventory and player funds.
+6. Canonical Checks is trusted for composition and artwork.

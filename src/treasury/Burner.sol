@@ -12,6 +12,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 interface IVenue {
     function poolKey() external view returns (PoolKey memory);
     function poolManager() external view returns (IPoolManager);
+    function launched() external view returns (bool);
 }
 
 interface IBurnableCoin {
@@ -43,8 +44,12 @@ contract Burner is IUnlockCallback {
     error TooSoon();
     error Nothing();
     error NotPoolManager();
+    error NotLaunched();
 
     constructor(IVenue venue_, uint256 maxPerBurn_, uint256 interval_) {
+        // Before launch the venue's key has no hook and no pool exists; ETH sent here could then never leave.
+        if (!venue_.launched()) revert NotLaunched();
+        if (maxPerBurn_ == 0) revert Nothing(); // `burn` could never spend, stranding all ETH sent here
         venue = address(venue_);
         poolManager = venue_.poolManager();
         key = venue_.poolKey();

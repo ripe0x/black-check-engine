@@ -39,6 +39,15 @@ contract DeployTest is ForkBase, DeploySystem {
         this.check(s, c);
     }
 
+    /// An unset opening tick (0, one coin per ETH) is refused before the market can open.
+    function test_postflightRefusesUnsetOpeningTick() public {
+        Config memory c = _config();
+        c.venueStartTick = 0;
+        System memory s = deploySystem(c, address(this), address(this));
+        vm.expectRevert(abi.encodeWithSelector(Postflight.selector, "opening price"));
+        this.check(s, c);
+    }
+
     /// Coin fees fund acquisitions end to end: deploy through the production routine, open the market, trade, forward.
     function test_coinTradingFundsAcquisitions() public {
         Config memory c = _config();
@@ -91,7 +100,11 @@ contract DeployTest is ForkBase, DeploySystem {
     function test_surplusBuysAndBurnsCoin() public {
         Config memory c = _config();
         System memory s = deploySystem(c, address(this), address(this));
+        vm.expectRevert(Burner.NotLaunched.selector);
+        new Burner(IVenue(address(s.liquidity)), 0.1 ether, 1 days);
         s.liquidity.launch();
+        vm.expectRevert(Burner.Nothing.selector);
+        new Burner(IVenue(address(s.liquidity)), 0, 1 days);
         Burner burner = new Burner(IVenue(address(s.liquidity)), 0.1 ether, 1 days);
 
         bytes memory data = abi.encodeCall(Engine.setBurner, (address(burner), uint128(0.5 ether)));

@@ -16,7 +16,7 @@ Naming: The project's final name and ticker are unresolved. `BLACK` is only a pl
 
 ## 1. Purpose and product definition
 
-This is an autonomous, long duration Ethereum protocol that acquires Checks NFTs, exposes them to a paid random draw, and gradually composes surviving Checks into rarer artworks. The eventual creation of a Black Check is its stated objective. Creation is neither guaranteed nor required for the system to continue operating.
+This is an autonomous, long duration Ethereum protocol that acquires Checks NFTs, exposes them to a paid random draw, and gradually composes surviving Checks into rarer artworks. A single Check (64 Original units) is the realistic headline composite; a Black Check (4,096 units, 25.6% of all units that can ever exist) remains possible and is never promised (D001, approved). Creation of either is neither guaranteed nor required for the system to continue operating.
 
 The protocol has four connected participant activities:
 

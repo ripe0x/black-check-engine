@@ -1,7 +1,7 @@
 # Current execution status
 
-Stage: Phase 4 complete (built, fork-tested, independently reviewed). Phase 5 prepared up to the founder
-decisions in docs/FOUNDER_REVIEW.md; the release candidate freeze waits on them.
+Stage: Phase 5. Founder decisions 1-6 answered 2026-10-30 (recommendations accepted; venue fee and opening tick
+stay placeholders). Release candidate being frozen.
 Branch: `dev` (local). Latest milestone commit: see `git log`.
 
 ## Pinned environment
@@ -65,10 +65,9 @@ None.
   (8 x 40) hold; `node --test keeper/test/policy.test.mjs` 7/7; site `tsc --noEmit` passes.
 
 ## Next executable action
-Wait for the founder's answers to docs/FOUNDER_REVIEW.md decisions 1-6, then apply them to LaunchConfig, spec and
-tests, freeze a release candidate, run the full suite once with CANDIDATE_RUN=1, and hand the frozen commit to the
-audit. Independent work available meanwhile: Engine view helpers the keeper and site asked for (current notional of
-an unlisted Check, compose cost, lightweight tier read), which remove duplicated off-chain logic. Burner deployment and `setBurner` are a post-deploy timelock step (not in DeploySystem yet).
+Freeze the release candidate (local tag), run each broad check once with CANDIDATE_RUN=1, record the evidence, and
+hand the frozen commit to the audit (docs/AUDIT_SCOPE.md). Before any mainnet deployment: final venue fee and opening
+tick, name and ticker, council, and the timelock-settable placeholders listed in docs/FOUNDER_REVIEW.md.
 
 ## Incidents
 - 2026-10-30: during a rehearsal the lead stopped an anvil process on port 8548 that it had not started (forked near
@@ -80,14 +79,11 @@ an unlisted Check, compose cost, lightweight tier read), which remove duplicated
 
 ## Open items (not yet built)
 - Keepers are unpaid; maintenance relies on the operator or volunteers.
-- Opening fee curve against launch snipers dropped (D009 asks the founder).
+- No opening fee curve against launch snipers in the candidate (D009 approved without it).
 
 ## Review queue
-docs/DECISIONS.md: D001 (Black Check needs 25.6% of all possible Check units), D002 (survival counts allocating
-draws at processing), D003 (tier schedule pricing instead of signed quotes), D004
-(Shape markup), D005 (decay floor near player break-even), D006 (coin buyouts from a timelocked
-coin schedule), D007 (standing bid instead of marketplace orders), D008 (composition window in draws), D009 (coin venue: fee rate,
-opening tick, opening curve), D010 (surplus buy-and-burn without an oracle).
+Approved 2026-10-30: D001, D003, D005, D006, D007, D009 (fee and tick placeholders). Optional reviews still open:
+D002, D004, D008, D010.
 
 ## Continuity protocol
 After each meaningful increment, update this file with phase, completed work, exact commands and test outcomes, risks,

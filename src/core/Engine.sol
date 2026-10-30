@@ -330,7 +330,9 @@ contract Engine is Initializable, UUPSUpgradeable {
     }
 
     /// @notice Coin `compose(keep, burn, swap)` would burn now: zero on the free deterministic fallback.
+    ///         Reverts like `compose` on an ineligible Check; tier match and distinctness are left to `checks.composite`.
     function composeCost(uint256 keep, uint256 burn, bool swap) external view returns (uint256) {
+        if (!eligible(keep) || !eligible(burn)) revert NotEligible();
         return _composeCost(keep, burn, swap, checks.getCheck(keep).stored.divisorIndex);
     }
 
@@ -340,9 +342,13 @@ contract Engine is Initializable, UUPSUpgradeable {
         return composeBurn[tier];
     }
 
-    /// @notice The rule notional a Check would list or reprice to now (schedule decayed by its survived draws).
+    /// @notice The rule notional a Check would list or reprice to now (schedule decayed by its survived draws). A
+    ///         record whose listing FWA gave away is stale: `listChecks` clears it and starts anew, so it counts 0.
+    ///         The posted price can lag this by up to `repriceStepBps` (see `reprice`).
     function currentNotional(uint256 tokenId) external view returns (uint256) {
-        return _notional(checks.getCheck(tokenId).stored.divisorIndex, survivedDraws(tokenId));
+        Listing memory l = checkListing[tokenId];
+        bool stale = l.controller != address(0) && !IController(l.controller).isListed(l.listingId);
+        return _notional(checks.getCheck(tokenId).stored.divisorIndex, stale ? 0 : survivedDraws(tokenId));
     }
 
     function _first(uint256 a, uint256 b) internal view returns (uint256) {

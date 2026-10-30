@@ -1,21 +1,29 @@
 # Founder review (grouped)
 
-State at commit b608e19, branch `dev`, local only. Nothing deployed, broadcast, spent, published or pushed.
-Reply to the numbered decisions in one message; everything else keeps moving without you.
+Branch `dev`, local only. Nothing deployed, broadcast, spent, published or pushed.
 
-## Decisions required before a release candidate
+## Decisions (answered 2026-10-30)
 
-| # | Decision | My recommendation | What changes if you disagree |
-| --- | --- | --- | --- |
-| 1 | **D003 Pricing source**: tier schedule set through the 7-day timelock vs signed market quotes | Timelocked schedule; guardian halts on sharp market moves | Add a quote module and its signers (new trusted party) |
-| 2 | **D005 Decay depth**: floor at 85% of schedule, 0.2% per survived draw | Keep near the player break-even bound | Deeper decay gives a bigger subsidy (32 ETH over 2 years at 25%) and invites arbitrage draws |
-| 3 | **D006 Coin buyouts**: timelocked coin price per tier, launched disabled | Enable per tier only once the coin trades with depth | An oracle hook or no coin buyouts |
-| 4 | **D007 Acquisitions**: standing bid at 90% of schedule, weekly cap, vs keeper-run marketplace orders | Standing bid | Build a restricted Seaport adapter |
-| 5 | **D009 Coin venue**: fee rate (1% placeholder), opening price (≈100 ETH fully diluted placeholder), opening anti-sniper curve (dropped) | Set the rate and price; decide whether launch sniping matters | Rate and price are immutable at deployment; the curve is a contained addition |
-| 6 | **D001 Black Check framing**: it needs 4,096 Original-equivalents (≈1,024 ETH at a 0.25 ETH floor, 25.6% of all units that can exist) | Present a single Check as the realistic headline; buy singles and high tiers when cheap | Messaging only |
+The founder accepted the recommendations for decisions 1-6 and kept the placeholder venue fee and opening price for
+the release candidate.
 
-Optional reviews: D002 (survival counts allocating draws), D004 (Shapes at backing + 10%), D008 (composition window in
-draws), D010 (buy-and-burn chunk and reserve).
+| # | Decision | Outcome |
+| --- | --- | --- |
+| 1 | D003 Pricing source | Timelocked tier schedule; guardian halts on sharp market moves |
+| 2 | D005 Decay depth | Floor 85% of schedule, 0.2% per survived draw |
+| 3 | D006 Coin buyouts | Launch disabled; enabled per tier through the timelock once the coin trades with depth |
+| 4 | D007 Acquisitions | Standing bid at 90% of schedule, weekly cap |
+| 5 | D009 Coin venue | Design accepted; fee 1% and opening tick 161,200 remain placeholders; no opening curve |
+| 6 | D001 Black Check framing | A single Check is the realistic headline; a Black Check stays possible, never promised |
+
+Optional reviews still open: D002 (survival counts allocating draws), D004 (Shapes at backing + 10%), D008
+(composition window in draws), D010 (buy-and-burn chunk and reserve).
+
+## Values required before any mainnet deployment
+
+Immutable at deployment: the venue fee rate and opening tick (D009 placeholders), coin name and ticker, coin supply.
+Timelock-settable after deployment but still placeholders: compose coin burns, coin buyout prices (0, disabled),
+weekly bid cap (0.75 ETH), Burner chunk, interval and reserve.
 
 ## Gates outside the code
 

@@ -5,7 +5,8 @@ Keep work moving without repeatedly interrupting the founder. Escalate only deci
 ## REVIEW: material choices for founder
 
 ### D001: A Black Check needs a quarter of all Checks that can ever exist
-Status: REVIEW
+Status: APPROVED
+Owner decision (2026-10-30): recommendation accepted. A single Check is the realistic headline; acquisition favours singles and high tiers when cheap; the Black Check stays possible, never promised.
 Importance: High
 Why it came up: Phase 0 fork reads (block 26,302,000). Checks has minted 12,474 Originals and 3,556 Editions remain
 unmigrated, so at most 16,030 80-Check units can ever exist. A Black Check consumes 4,096 of them (25.6%). No Black
@@ -45,7 +46,8 @@ Reversibility: the alternative needs a per-sequence cursor again (~29k gas per d
 Owner action: Optional review.
 
 ### D003: Price listings from a timelocked tier schedule instead of signed market quotes
-Status: REVIEW
+Status: APPROVED
+Owner decision (2026-10-30): recommendation accepted. Timelocked tier schedule; the guardian halts on sharp market moves.
 Importance: High
 Why it came up: Phase 2 custody design. There is no trustless onchain price for a Check. The spec's PricingGuard
 (two signers attesting market quotes) adds a new trusted party and an offchain service, and a signer pair that
@@ -83,7 +85,8 @@ Reversibility: timelocked parameter.
 Owner action: Optional review.
 
 ### D005: Keep the decay floor near the player break-even bound (85% of schedule)
-Status: REVIEW
+Status: APPROVED
+Owner decision (2026-10-30): recommendation accepted. Floor 85% of schedule, 0.2% per survived draw.
 Importance: High
 Why it came up: Phase 3 exact FWA math. When a Check's notional falls below its market value, draws gain expected
 value; with 20 Checks among 57 listings, players break even with every Check at 87.5% of value. Deeper decay pays a
@@ -100,7 +103,8 @@ Reversibility: timelocked parameters.
 Owner action: Required before finalization.
 
 ### D006: Price coin buyouts from a timelocked coin schedule, not a market oracle
-Status: REVIEW
+Status: APPROVED
+Owner decision (2026-10-30): recommendation accepted. Coin buyouts launch disabled; enabled per tier through the timelock once the coin trades with depth.
 Importance: High
 Why it came up: Phase 4. The spec asks for a manipulation-resistant coin-to-ETH conversion. The coin's venue is not
 built yet, a Uniswap v4 pool has no built-in TWAP, and a spot price is manipulable within one transaction.
@@ -117,7 +121,8 @@ Reversibility: timelocked parameter; an oracle path can be added by upgrade.
 Owner action: Required before finalization.
 
 ### D007: Acquire Checks through a standing bid, not keeper-executed marketplace orders
-Status: REVIEW
+Status: APPROVED
+Owner decision (2026-10-30): recommendation accepted. Standing bid at 90% of schedule with a weekly cap; no marketplace adapter.
 Importance: High
 Why it came up: Phase 4. The spec's keeper-proposed marketplace purchases need a restricted marketplace adapter
 (Seaport order validation, target allowlists, quote age) and still trust the keeper to choose the order.
@@ -153,7 +158,8 @@ Reversibility: one condition.
 Owner action: Optional review.
 
 ### D009: Coin venue: full supply locked single-sided on Uniswap v4, flat ETH fee to acquisitions, no opening curve
-Status: REVIEW
+Status: APPROVED
+Owner decision (2026-10-30): design (a) accepted. The 1% fee and the opening tick 161,200 stay placeholders for the release candidate. Both are immutable at deployment, so final values are required before any mainnet deployment. No opening curve in the candidate (a contained addition if launch sniping is judged to matter).
 Importance: High
 Why it came up: Phase 4 venue (R12). The coin needs a market and a fee that funds Checks without an owner who can
 divert it.
@@ -173,7 +179,7 @@ is, postflight must check the hook's engine, launcher and fee, since the deploye
 Update after review: the opening tick is fixed in `VenueLiquidity`'s constructor and checked by postflight, so
 the deployer chooses only when to open, not the price.
 Reversibility: immutable once launched; everything before launch is free to change.
-Owner action: Required before finalization.
+Owner action: Required before real execution (final fee rate and opening tick).
 
 ### D010: Game surplus: daily release above a reserve, burned in capped chunks without an oracle
 Status: REVIEW

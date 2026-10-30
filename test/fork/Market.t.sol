@@ -100,6 +100,8 @@ contract MarketTest is SystemBase {
     // ------------------------------------------------------------------ composition
 
     function test_manualComposeBurnsOnceFallbackIsFree() public {
+        vm.expectRevert(Engine.NotEligible.selector);
+        engine.composeCost(checkIds[1], checkIds[0], true); // no draws survived yet
         _drawShapes(2); // threshold reached, grace (3 more) not
         uint256 supply = coin.totalSupply();
         assertEq(engine.composeCost(checkIds[1], checkIds[0], true), 100 ether);

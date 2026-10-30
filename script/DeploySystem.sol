@@ -158,6 +158,7 @@ abstract contract DeploySystem is CommonBase {
         if (h.token() != address(s.coin) || h.feeBps() != c.venueFeeBps) revert Postflight("hook terms");
         if (s.liquidity.hook() != address(h) || s.liquidity.token() != address(s.coin)) revert Postflight("liquidity wiring");
         if (s.liquidity.launched() || s.liquidity.deployer() != deployer) revert Postflight("liquidity state");
-        if (s.liquidity.startTick() != c.venueStartTick) revert Postflight("opening price");
+        // Tick 0 (an unset Config field) would open at 1 coin per ETH.
+        if (c.venueStartTick == 0 || s.liquidity.startTick() != c.venueStartTick) revert Postflight("opening price");
     }
 }

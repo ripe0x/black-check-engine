@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {stdStorage, StdStorage} from "forge-std/StdStorage.sol";
 import {SystemBase} from "./SystemBase.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -23,6 +24,8 @@ contract DrainEngine is Engine {
 
 /// @notice Phase 2 custody and authority (docs/THREAT_MODEL.md A1-A6, A9, A11) on the real FWA pool.
 contract CustodyTest is SystemBase {
+    using stdStorage for StdStorage;
+
     uint256[] internal checkIds;
     uint256[] internal shapeIds;
 
@@ -175,6 +178,23 @@ contract CustodyTest is SystemBase {
         // A still-listed Check cannot be listed twice.
         vm.expectRevert(Engine.AlreadyListed.selector);
         engine.listChecks(one);
+    }
+
+    /// Review finding: for a won Check sold back, the view reports the price `listChecks` will use (fresh history).
+    function test_currentNotionalOfAReturnedCheckMatchesItsRelisting() public {
+        for (uint256 i; i < 3; ++i) _drawSelecting(pool, _shapeListing(shapeIds[i]));
+        _drawSelecting(pool, _checkListing(checkIds[0]));
+        vm.prank(player);
+        CHECKS.transferFrom(player, address(engine), checkIds[0]);
+        // Survival carried from an earlier pool (as after a migration), written directly: listChecks discards it.
+        stdstore.target(address(engine)).sig("carriedDraws(uint256)").with_key(checkIds[0]).checked_write(uint256(50));
+        assertEq(engine.survivedDraws(checkIds[0]), 50);
+        uint256 shown = engine.currentNotional(checkIds[0]);
+        uint256[] memory one = new uint256[](1);
+        one[0] = checkIds[0];
+        engine.listChecks(one);
+        (,, uint128 listed) = engine.checkListing(checkIds[0]);
+        assertEq(shown, listed);
     }
 
     /// Batches above FWA's 20-item inventory limit are split by the controller.
