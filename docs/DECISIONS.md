@@ -239,6 +239,60 @@ Reversibility: burner and controller are replaceable through the timelock; the v
 deployed (not deployed).
 Owner action: Optional review (the H1 chunk bound caps burn speed).
 
+### D012: Rebase on collection-games: whose authority over migration and fee routing?
+Status: AWAITING OWNER DECISION
+Importance: High
+Why it came up: The owner directed that ripe0x/collection-games (409ca75) be the base (docs/REBASE_PLAN.md). Its
+administration is one owner acting at once, with migration and fee-recipient changes proposed by that owner on
+72 hours' notice (collection-games D57, D63, SECURITY.md "Administration"). A migration hands every NFT and the
+vault's ETH to the proposed contract, so the owner alone can move custody to code it controls. That conflicts with
+invariants 10 and 11.
+Desired outcome: Collection-games' simpler permanent contracts, code-pinned migration and Sunset, without one key
+being able to drain custody.
+Options considered: (a) adopt collection-games' model and amend invariants 10 and 11; (b) collection-games'
+structure with the council timelock (7 days, guardian cancel) as proposer of migrations and fee recipients, the
+owner keeping the instant Sunset (buybacks only), pause and bounded settings, with constant bounds restored on
+instant powers that can move value (markup floor, keeper gas-price and fee caps, a bid ceiling against the schedule,
+no $LAYER share, allowlist through the timelock); (c) keep this repository's UUPS Engine and port only components.
+Recommended choice: (b). It keeps the invariants and drops the residual "council majority can upgrade to anything"
+risk of the UUPS Engine in favour of a public, code-pinned migration.
+Tradeoff: Migrations and fee-route changes take 7 days and need the council; the founder alone cannot ship a new
+system.
+Action taken: None in code. Plan phases R1-R6 do not depend on it; R7 builds (b) and stays under REVIEW until
+decided.
+Reversibility: Cheap before deployment; after deployment only through a migration.
+Owner action: Required before finalization.
+
+### D013: Coin market mechanics from collection-games
+Status: REVIEW
+Importance: High
+Why it came up: Collection-games' hook, token and burner replace D009 and D010: a 5% fee, an immutable 69% opening
+curve against snipers, transfers restricted to the canonical pool (with an allowlist) so that side pools cannot avoid
+the fee, a burner protected by same-block price and impact bounds instead of a small chunk, and buybacks locked until
+a win. This repository's open items include "no opening fee curve".
+Options considered: (a) keep D009/D010 on the new contracts; (b) adopt the mechanics with values from this
+project's model; (c) adopt collection-games' values as they are.
+Recommended choice: (b). No $LAYER share. The milestone release fires on a Check won. Restriction only if
+`unrestrict` stays reachable through the timelock.
+Tradeoff: Restriction blocks wallet transfers and exchange deposits until lifted; the opening curve can make
+scanners label the coin a honeypot for about an hour (collection-games LAUNCH_CHECKLIST item 6).
+Action taken: None yet (plan phase R6).
+Reversibility: Hook curve and opening tick are immutable once deployed; fee rate and burner cadence are settings.
+Owner action: Required before finalization.
+
+### D014: FWA venue after V2 pool creation was switched off
+Status: REVIEW
+Importance: High
+Why it came up: FWA switched off V2 pool creation at block 26,329,277 and deployed community pool contracts
+(factory 0x8919…477C, block 26,328,828), per collection-games D89. Every fork test here is pinned earlier (26,302,000).
+A community pool pays its owner the base price only; collection-games estimated its margin at about 11% → 8.7%.
+Options considered: (a) V2, with FWA reopening creation for this deploy; (b) community pools from the start.
+Recommended choice: (a) if FWA reopens V2 for us, with the community pool as the real migration target that replaces
+`NextGenControllerMock` (invariant 11 evidence). Otherwise (b), with the economics re-run at the lower margin.
+Action taken: None yet (plan phases R0 and R2; collection-games 72d5179 is the reference port).
+Reversibility: Pool ownership is permanent per pool; changing venue later means a migration.
+Owner action: Required before real execution.
+
 Use this template:
 
 ### D001: Short question

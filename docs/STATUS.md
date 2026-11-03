@@ -1,6 +1,6 @@
 # Current execution status
 
-Stage: Phase 5. Release candidate `rc2` (commit 6b00eed, local tag) frozen and verified
+Stage: Rebase planned (docs/REBASE_PLAN.md). Previous stage: Phase 5, release candidate `rc2` (commit 6b00eed, local tag) frozen and verified
 (docs/receipts/rc2-verification.md): rc1 plus the rc1 audit fixes. Not re-audited; not deployable until the gates
 below close.
 Branch: `dev` (local). Latest milestone commit: see `git log`.
@@ -85,11 +85,11 @@ None.
   (8 x 40) hold; `node --test keeper/test/policy.test.mjs` 7/7; site `tsc --noEmit` passes.
 
 ## Next executable action
-Owner's choice: a retest of `rc2` (6b00eed) against the rc1 findings and the changed code (Burner, FwaV2Controller,
-VenueLiquidity, FwaFeeBuyer, DeploySystem), and whether to push `rc2`. Findings get fixed on `dev`, affected checks
-repeated, and a new tag frozen. Before any mainnet deployment: final
-venue fee and opening tick, name and ticker, council and guardian keys, legal review, keeper pay, and the
-timelock-settable placeholders in docs/FOUNDER_REVIEW.md. Deployment, the FWA fee purchase and the coin launch need
+Rebase on collection-games (owner direction, 2026-11-03): docs/REBASE_PLAN.md. Start with phase R0 (pin FWA
+facts read-only, tag `rc2` as the archive of the old architecture), then R1 (import collection-games 409ca75 and
+prove its suite here unchanged). Decisions D012 (authority over migration and fee routing, AWAITING OWNER DECISION),
+D013 (coin market mechanics) and D014 (FWA venue after V2 pool creation was switched off at block 26,329,277) are in
+docs/DECISIONS.md; R1-R6 do not wait on them. Deployment, the FWA fee purchase and the coin launch still need
 explicit owner authorization.
 
 ## Incidents
