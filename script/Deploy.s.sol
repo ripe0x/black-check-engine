@@ -1,41 +1,86 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {Script} from "forge-std/Script.sol";
+import {Script, console2} from "forge-std/Script.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {console2} from "forge-std/console2.sol";
-import {DeploySystem} from "./DeploySystem.sol";
 import {LaunchConfig} from "./LaunchConfig.sol";
 
-/// @notice Deploys the system with the launch values and runs the postflight. Simulation by default:
-///           COUNCIL=0x.. GUARDIAN=0x.. OPERATOR=0x.. COIN_NAME=.. COIN_SYMBOL=.. \
-///           forge script script/Deploy.s.sol --rpc-url https://mainnet.gateway.tenderly.co --sender <deployer>
-///         Broadcasting additionally needs I_AM_THE_OWNER=yes and is not authorized by anything in this repository.
-///         Opening the FWA pool (the 50,000 FWA creation fee) and launching the coin market are separate, later steps.
-contract Deploy is Script, DeploySystem {
-    function run() external returns (System memory s) {
-        Config memory c = LaunchConfig.mainnet();
-        c.council = vm.envAddress("COUNCIL");
-        c.guardian = vm.envAddress("GUARDIAN");
-        c.operator = vm.envAddress("OPERATOR");
-        c.coinName = vm.envString("COIN_NAME");
-        c.coinSymbol = vm.envString("COIN_SYMBOL");
-        require(block.chainid == 1, "mainnet values");
-        if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) {
-            require(keccak256(bytes(vm.envOr("I_AM_THE_OWNER", string("")))) == keccak256("yes"), "owner ack");
-        }
+/// @notice Deploys Ape Draw (coin, game, MigrationAuthority), wires it, runs the postflight and writes
+///         `deployments/<DEPLOY_ENV>.json`.
+///         Never run against mainnet from an automated session; use `script/deploy.sh <env>` (dry run by default).
+/// @dev Environment (values only, see script/env/*.env):
+///      OWNER                   the administrator (Admin.owner: two-step transferable, renounceable)
+///      COLLECTION              "bayc" (the launch config)
+///      COIN_NAME, COIN_SYMBOL  coin identity (placeholders in LaunchConfig if unset)
+///      REF_PRICE_WEI           the reference price: the live floor on the day; the live bid's first activation
+///                              threshold is 100% of it (OWNER; D64)
+///      MAX_PRICE_WEI           optional emergency cap on any acquisition (default 0: none)
+///      CREATE2_FACTORY         deterministic deployment proxy (default 0x4e59b44847b379578588920cA78FbF26c0B4956C)
+contract Deploy is Script, LaunchConfig {
+    address internal constant DEFAULT_CREATE2 = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-        vm.startBroadcast();
-        (, address deployer,) = vm.readCallers();
-        s = deploySystem(c, deployer, CREATE2_FACTORY);
+    function run() external virtual returns (System memory s) {
+        Config memory c = _envConfig();
+        address deployer = msg.sender;
+        // a real broadcast to mainnet needs the owner's affirmation here too, not only in deploy.sh (a direct
+        // `forge script --broadcast` skips the shell)
+        if (block.chainid == 1 && vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) {
+            require(keccak256(bytes(vm.envOr("I_AM_THE_OWNER", string("")))) == keccak256("yes"), "I_AM_THE_OWNER=yes");
+        }
+        vm.startBroadcast(deployer);
+        s = _deploySystem(c, deployer);
         vm.stopBroadcast();
-        postflight(s, c, deployer);
-        console2.log("timelock", address(s.timelock));
-        console2.log("coin", address(s.coin));
-        console2.log("engine", address(s.engine));
-        console2.log("controller", address(s.controller));
-        console2.log("pool (predicted)", address(s.controller.pool()));
-        console2.log("venue liquidity", address(s.liquidity));
-        console2.log("venue hook", address(s.hook));
+        postflight(c, s, deployer);
+        _write(s, c);
+        console2.log("deployed; postflight passed");
+    }
+
+    function _envConfig() internal view virtual returns (Config memory c) {
+        address owner = vm.envAddress("OWNER");
+        string memory which = vm.envOr("COLLECTION", string("bayc"));
+        if (keccak256(bytes(which)) == keccak256("bayc")) {
+            c = _baycConfig(owner);
+        } else {
+            c = _collectionConfig(owner, vm.parseAddress(which), "Collection Game Coin", "CGC");
+        }
+        c.name = vm.envOr("COIN_NAME", c.name);
+        c.symbol = vm.envOr("COIN_SYMBOL", c.symbol);
+        c.coinImage = vm.envOr("COIN_IMAGE", c.coinImage);
+        c.coinDescription = vm.envOr("COIN_DESCRIPTION", c.coinDescription);
+        c.refPrice = vm.envOr("REF_PRICE_WEI", c.refPrice);
+        c.bid.maxPrice = vm.envOr("MAX_PRICE_WEI", c.bid.maxPrice);
+        c.initialBoardSize = vm.envOr("INITIAL_BOARD_SIZE", c.initialBoardSize); // rehearsals only; launch: 50
+        c.create2Deployer = vm.envOr("CREATE2_FACTORY", DEFAULT_CREATE2);
+        require(c.refPrice != 0 && (c.bid.maxPrice == 0 || c.bid.maxPrice >= c.refPrice), "bid prices");
+        // the environment named must be the chain connected: never mainnet values on a fork, nor fork values on mainnet
+        bool mainnetEnv = keccak256(bytes(vm.envOr("DEPLOY_ENV", string("local")))) == keccak256("mainnet");
+        require(mainnetEnv == (block.chainid == 1), "DEPLOY_ENV does not match the chain");
+    }
+
+    function _write(System memory s, Config memory c) internal {
+        string memory env = vm.envOr("DEPLOY_ENV", string("local"));
+        string memory k = "deployment";
+        vm.serializeUint(k, "chainId", block.chainid);
+        vm.serializeUint(k, "block", block.number);
+        vm.serializeAddress(k, "owner", c.owner);
+        vm.serializeAddress(k, "admin", address(s.admin));
+        vm.serializeAddress(k, "collection", c.collection);
+        vm.serializeAddress(k, "migration", address(s.migration));
+        vm.serializeAddress(k, "liquidity", address(s.liquidity));
+        vm.serializeAddress(k, "token", address(s.token));
+        vm.serializeAddress(k, "burner", address(s.burner));
+        vm.serializeAddress(k, "vault", address(s.vault));
+        vm.serializeAddress(k, "hook", address(s.hook));
+        vm.serializeAddress(k, "poolOwner", address(s.poolOwner));
+        vm.serializeAddress(k, "sunset", address(s.sunset));
+        vm.serializeAddress(k, "adapter", address(s.adapter));
+        vm.serializeAddress(k, "lens", address(s.lens));
+        vm.serializeAddress(k, "drawRouter", address(s.drawRouter));
+        vm.serializeAddress(k, "packs", s.packs);
+        vm.serializeAddress(k, "packRenderer", s.packRenderer);
+        vm.serializeAddress(k, "layerTap", s.layerTap);
+        vm.serializeAddress(k, "deployer", msg.sender);
+        string memory out = vm.serializeAddress(k, "game", address(s.game));
+        vm.writeJson(out, string.concat("deployments/", env, ".json"));
     }
 }

@@ -1,16 +1,20 @@
 {
-  "name": "checks-survival-site",
-  "version": "0.1.0",
+  "name": "collection-games-site",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
+    "deployment": "node scripts/deployment.mjs",
     "abi": "node scripts/abi.mjs",
-    "predev": "node scripts/abi.mjs",
-    "prebuild": "node scripts/abi.mjs",
+    "predev": "node scripts/deployment.mjs",
+    "prebuild": "node scripts/deployment.mjs",
     "dev": "next dev",
     "build": "next build",
-    "typecheck": "node scripts/abi.mjs && tsc --noEmit"
+    "test": "node --experimental-strip-types --test test/format.test.mjs",
+    "build:promo": "node scripts/deployment.mjs && NEXT_PUBLIC_PROMO=1 next build",
+    "typecheck": "node scripts/deployment.mjs && tsc --noEmit"
   },
   "dependencies": {
+    "@rainbow-me/rainbowkit": "2.2.11",
     "@tanstack/react-query": "5.101.4",
     "next": "16.3.3",
     "react": "19.2.8",
