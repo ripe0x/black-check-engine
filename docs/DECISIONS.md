@@ -276,6 +276,7 @@ Recommended choice: (b). No $LAYER share. The milestone release fires on a Check
 `unrestrict` stays reachable through the timelock.
 Tradeoff: Restriction blocks wallet transfers and exchange deposits until lifted; the opening curve can make
 scanners label the coin a honeypot for about an hour (collection-games LAUNCH_CHECKLIST item 6).
+Owner, 2026-11-03: the implementer sets the launch values from the model (recorded as its own entry when done).
 Action taken: None yet (plan phase R6). Collection-games' launch values (5% each way, 69% curve falling one point
 a minute, slice <= 1 ETH, impact <= 5%, deviation <= 3%) stand as placeholders until this project's model sets
 them. The opening tick and the curve are immutable, so they need the owner's sign-off on the modelled numbers
@@ -306,8 +307,13 @@ Owner action: None (approved).
 ### D015: Remaining rebase choices (owner: "do your recs for the rest")
 Status: APPROVED 2026-11-03, as recommended below.
 Importance: Medium
-- Seaport adapter: not built. The per-tier standing bid (D007) is the only acquisition route. In collection-games
-  the adapter drew the most audit findings (F1, F2, B-F1, R3-12), and sellers can already sell at the bid directly.
+- Seaport adapter: **built** (owner, 2026-11-03, reversing the first recommendation). Collection-games'
+  `SeaportAdapter` with its audit fixes: D66 F-2 (prefund), D68 R3-12 (inflow counted in transient storage), D70 F1/F2/B-F1
+  (exact signed consideration count, no item paying the vault or custody, CONTRACT orders refused). Rounds 4-8 found
+  nothing new in it. Still open there, attempted but not proven safe: ERC-1271, zone and conduit orders with a hostile
+  callback. For Checks it fills one order at or below the tier's standing bid less the finder fee; the Check must
+  reach custody in the same call; its tier is read on-chain from Checks; only revealed Originals at scheduled tiers.
+  It sits alongside D007's standing bid and does not replace it.
 - Sunset: adopted as the built-in end state. Every Check is auctioned in a Dutch auction from 150% of its schedule
   price down to 25% over 30 days; every wei goes to buy-and-burn; the owner can trigger it at once and it is final
   (D012). It can end the game early, but it cannot send value to anyone.

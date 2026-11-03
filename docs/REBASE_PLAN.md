@@ -175,8 +175,9 @@ composition parts of Custody. Exit: a real 64-single `infinity` from custody on 
 compose and formation steps; a failed attempt burns nothing.
 
 **R5. Acquisition and buyouts.** `FundingVault` bid becomes per tier from the schedule with a weekly cap (D007);
-`sellCheck` and `sellEdition`; buyouts with ETH and with coin (disabled at launch). The Seaport adapter is not
-built (D015). Exit: the old Market tests ported; vault conservation invariant includes buyouts.
+`sellCheck` and `sellEdition`; buyouts with ETH and with coin (disabled at launch). The hardened Seaport adapter
+is built alongside the bid (D015, owner): fills at or below the tier bid less the finder fee, Check in custody in
+the same call. Exit: the old Market tests ported; vault conservation invariant includes buyouts.
 
 **R6. Coin, market, buy-and-burn.** `CollectionToken`, `CollectionHook`, `ProtocolLiquidity` and `CollectionBurner`
 with this project's values: name gate, placeholder name, fee and curve per D013, milestone reserve released on a
@@ -210,8 +211,8 @@ collection-games format. Exit: an `rc3` candidate; nothing deployed.
 | D013 | Coin market: keep D009/D010 (1% flat, no curve, unrestricted, daily release), or adopt collection-games' 5% fee, 69% opening curve, transfer restriction plus allowlist, and buybacks locked until a Check is won | Adopt the mechanics, choose values in the economics model. No $LAYER share. Restriction only with `unrestrict` reachable through the timelock | R6 values |
 | D014 | FWA venue: V2 (FWA must reopen creation; about 11% margin) or community pools (no creation fee, about 8.7%) | V2 if FWA reopens it for this deploy; the community pool as the tested migration target either way | Deploy, not the build |
 
-Outcomes: D012 (b), more locked down; D013 as recommended, values still to come from the model; D014 V2. D015,
-as recommended: no Seaport adapter; the Sunset adopted; keeper pay on collection-games' structure with constant caps;
+Outcomes: D012 (b), more locked down; D013 as recommended, values set by the implementer from the model; D014
+V2. D015: the Seaport adapter built (owner); the Sunset adopted; keeper pay on collection-games' structure with constant caps;
 the daily decay built but off; D002 and D008 kept; D004 and D010 superseded.
 
 ## 9. Risks of the rebase
