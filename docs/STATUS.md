@@ -85,12 +85,12 @@ None.
   (8 x 40) hold; `node --test keeper/test/policy.test.mjs` 7/7; site `tsc --noEmit` passes.
 
 ## Next executable action
-Rebase on collection-games (owner direction, 2026-11-03): docs/REBASE_PLAN.md. Start with phase R0 (pin FWA
-facts read-only, tag `rc2` as the archive of the old architecture), then R1 (import collection-games 409ca75 and
-prove its suite here unchanged). Decisions D012 (authority over migration and fee routing, AWAITING OWNER DECISION),
-D013 (coin market mechanics) and D014 (FWA venue after V2 pool creation was switched off at block 26,329,277) are in
-docs/DECISIONS.md; R1-R6 do not wait on them. Deployment, the FWA fee purchase and the coin launch still need
-explicit owner authorization.
+Rebase on collection-games (owner direction, 2026-11-03): docs/REBASE_PLAN.md. Owner decisions recorded 2026-11-03:
+D012 (b), migration and fee routing behind the council timelock, more locked down; D013 adopt collection-games'
+coin-market mechanics with modelled values; D014 stay on FWA V2 (creation reopened at block 26,335,860, verified
+read-only); D015 the remaining choices as recommended. Next: phase R0 (tag `rc2` as the archive of the old
+architecture), then R1 (import collection-games 409ca75 and prove its suite here unchanged). Deployment, the FWA fee
+purchase and the coin launch still need explicit owner authorization.
 
 ## Incidents
 - 2026-10-30: during a rehearsal the lead stopped an anvil process on port 8548 that it had not started (forked near
@@ -105,8 +105,9 @@ explicit owner authorization.
 - No opening fee curve against launch snipers in the candidate (D009 approved without it).
 
 ## Review queue
-Approved 2026-10-30: D001, D003, D005, D006, D007, D009 (fee and tick placeholders). Optional reviews still open:
-D002, D004, D008, D010.
+Approved 2026-10-30: D001, D003, D005, D006, D007, D009 (fee and tick placeholders). Approved 2026-11-03: D012, D013,
+D014, D015 (closes D002, D008, D011; supersedes D004, D010 and part of D009). Still owed before deployment: the
+modelled coin-market launch values (D013), name and ticker, council and guardian keys, legal review.
 
 ## Continuity protocol
 After each meaningful increment, update this file with phase, completed work, exact commands and test outcomes, risks,

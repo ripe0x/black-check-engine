@@ -1,6 +1,8 @@
 # Rebase plan: Checks Survival Protocol on the Collection Games base
 
-Date: 2026-11-03. Inputs: this repository at `rc2` (6b00eed, docs at 075b67d) and `ripe0x/collection-games` at 409ca75
+Date: 2026-11-03. **Owner decisions recorded the same day: D012 option (b), more locked down; D013 as
+recommended; D014 stay on V2 (FWA reopened V2 creation at block 26,335,860); D015 the remaining choices as
+recommended. Sections 5 and 8 below are now decided, not open.** Inputs: this repository at `rc2` (6b00eed, docs at 075b67d) and `ripe0x/collection-games` at 409ca75
 (D92, eight audit rounds). Nothing in this plan has been built yet. Owner direction: collection-games is the base to
 build from. Work in this repository began before collection-games was finished.
 
@@ -30,7 +32,12 @@ two implementations running side by side (CLAUDE.md, engineering rule 6).
 The dependency pins match, so porting needs no library migration. OpenZeppelin comes from `lib/shapes` in
 collection-games and from its own submodule here. Keep the separate submodule because `TimelockController` needs it.
 
-## 3. A fact that changes the baseline: FWA V2 pool creation is off
+## 3. A fact that changes the baseline: FWA V2 pool creation was off, then reopened
+
+**Update (D014):** read-only calls to the V2 factory show `poolCreationEnabled` false from block 26,329,277 and true
+again from block 26,335,860 (2026-11-03 17:46:23 UTC). At the latest block read (26,337,042) `betaAccess` is false and
+`edgeBps` is 500. The venue is V2. The text below is the original analysis.
+
 
 collection-games D89 records that FWA deployed new "community pool" contracts (factory `0x8919…477C`, block
 26,328,828) and switched off V2 pool creation at block 26,329,277. Existing V2 pools still run. FWA's founder plans to
@@ -149,10 +156,11 @@ recording the provenance of each file, as collection-games did with Draw Shapes.
 local anvil fork at its block 26,284,000. Exit: the imported suite passes here with the same counts, recorded with
 exact commands. This proves the base before any change.
 
-**R2. FWA pins and venue.** Add a fork profile after block 26,330,000 and port 72d5179's community-pool adapter as
-a second pool-owner path for migration tests only. Deploy precheck: `poolCreationEnabled()`. Exit: one fork test
-that proves V2 creation is refused at the current block, and that it works on the earlier block or with the switch
-opened locally (labelled as such).
+**R2. FWA pins and venue (V2, D014).** Add a fork profile after block 26,335,860, where V2 creation is open and
+`betaAccess` is off, and pin the deployed code of the V2 factory and clone again there. Port 72d5179's community-pool
+adapter as a second pool-owner path, used only for migration tests. Keep the deploy precheck
+`poolCreationEnabled()`. Exit: a real V2 pool created and drawn on the new block with no switches opened locally,
+and a test that the precheck refuses at a block inside 26,329,277-26,335,859.
 
 **R3. Checks custody and survival.** Size spike. Pool owner listing rule becomes tier schedule × survival decay
 (D005). Survival counters (C010) with their invariant. Purchase gate refuses Checks and Editions; exposure is
@@ -167,16 +175,18 @@ composition parts of Custody. Exit: a real 64-single `infinity` from custody on 
 compose and formation steps; a failed attempt burns nothing.
 
 **R5. Acquisition and buyouts.** `FundingVault` bid becomes per tier from the schedule with a weekly cap (D007);
-`sellCheck` and `sellEdition`; buyouts with ETH and with coin (disabled at launch). The Seaport adapter stays out
-unless D014 says otherwise. Exit: the old Market tests ported; vault conservation invariant includes buyouts.
+`sellCheck` and `sellEdition`; buyouts with ETH and with coin (disabled at launch). The Seaport adapter is not
+built (D015). Exit: the old Market tests ported; vault conservation invariant includes buyouts.
 
 **R6. Coin, market, buy-and-burn.** `CollectionToken`, `CollectionHook`, `ProtocolLiquidity` and `CollectionBurner`
 with this project's values: name gate, placeholder name, fee and curve per D013, milestone reserve released on a
 Check won. Market opens only after the FWA pool exists (D91). Exit: the old Venue and Deploy coverage on the new
 contracts; burner sandwich tests at the new bounds.
 
-**R7. Governance, migration, Sunset.** `Admin` plus the D012 split: council timelock as `MigrationAuthority`
-proposer; restored constant bounds. Sunset auctions Checks from their schedule price. Real migration V2 →
+**R7. Governance, migration, Sunset.** `Admin` plus the approved D012 split: council timelock as
+`MigrationAuthority` proposer for migrations and fee recipients; constant bounds on every instant power that can move
+value (markup floor, keeper gas-price, overhead and flat-fee caps, bid ceiling against the schedule); coin allowlist
+and `unrestrict` through the timelock; no $LAYER share. Sunset auctions Checks from their schedule price. Real migration V2 →
 community pool with survival carried (replaces `NextGenControllerMock`). Owner-cannot-drain suite: every owner
 function called by a hostile owner leaves the custody and value invariants intact. Exit: Governance, Migration and
 Sunset suites; ADMIN.md powers table with the worst case of each; independent security review
@@ -192,7 +202,7 @@ formation steps; keeper and site checks pass.
 and size receipts, rehearsal. Refresh AUDIT_SCOPE, FOUNDER_REVIEW and a sealed fresh-eyes audit prompt in the
 collection-games format. Exit: an `rc3` candidate; nothing deployed.
 
-## 8. Decisions for the founder
+## 8. Decisions for the founder (decided 2026-11-03; see DECISIONS.md D012-D015)
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
@@ -200,8 +210,9 @@ collection-games format. Exit: an `rc3` candidate; nothing deployed.
 | D013 | Coin market: keep D009/D010 (1% flat, no curve, unrestricted, daily release), or adopt collection-games' 5% fee, 69% opening curve, transfer restriction plus allowlist, and buybacks locked until a Check is won | Adopt the mechanics, choose values in the economics model. No $LAYER share. Restriction only with `unrestrict` reachable through the timelock | R6 values |
 | D014 | FWA venue: V2 (FWA must reopen creation; about 11% margin) or community pools (no creation fee, about 8.7%) | V2 if FWA reopens it for this deploy; the community pool as the tested migration target either way | Deploy, not the build |
 
-Lower priority, recorded in the log: whether to add the Seaport adapter alongside the schedule bid (D007), the
-Sunset as the protocol's end state, keeper-pay launch values, and the daily decay (off at launch).
+Outcomes: D012 (b), more locked down; D013 as recommended, values still to come from the model; D014 V2. D015,
+as recommended: no Seaport adapter; the Sunset adopted; keeper pay on collection-games' structure with constant caps;
+the daily decay built but off; D002 and D008 kept; D004 and D010 superseded.
 
 ## 9. Risks of the rebase
 

@@ -26,7 +26,7 @@ Reversibility: messaging and acquisition policy only; no code committed.
 Owner action: Optional review.
 
 ### D002: Count a draw as survived when FWA allocated a prize, not when delivery completed
-Status: REVIEW
+Status: APPROVED 2026-11-03 (D015)
 Importance: Medium
 Why it came up: Building the survival cursor against the real FWA clone (E3). The spec says DeliveryRefunded earns no
 credit and DeliveryPending must be resolved first. FWA leaves a failed delivery pending until the winner calls
@@ -68,7 +68,7 @@ Reversibility: an engine upgrade could add a quote path later.
 Owner action: Required before finalization.
 
 ### D004: List Shapes at backing + 10%, not exact backing
-Status: REVIEW
+Status: SUPERSEDED by D015 (board markup)
 Importance: Medium
 Why it came up: Phase 3 model (`sim/model.py`). Replacing a won Shape costs its backing plus the 0.001 ETH Shapes
 mint fee, 10% on a 0.01 ETH Shape, while the owner keeps only 2.5% over the harmonic mean per draw.
@@ -141,7 +141,7 @@ Reversibility: an adapter can be added by upgrade.
 Owner action: Required before finalization.
 
 ### D008: Measure the composition decision window in draws, not time
-Status: REVIEW
+Status: APPROVED 2026-11-03 (D015)
 Importance: Medium
 Why it came up: Phase 4. The spec gives participants a short time window to compose by choice (burning coin) before
 a keeper's free deterministic fallback. Eligibility is derived from FWA state, so there is no recorded moment when a
@@ -158,7 +158,7 @@ Reversibility: one condition.
 Owner action: Optional review.
 
 ### D009: Coin venue: full supply locked single-sided on Uniswap v4, flat ETH fee to acquisitions, no opening curve
-Status: APPROVED
+Status: APPROVED, then partly SUPERSEDED by D013 (fee rate, opening curve, restriction); single-sided full-supply liquidity and the fixed opening tick stand
 Owner decision (2026-10-30): design (a) accepted. The 1% fee and the opening tick 161,200 stay placeholders for the release candidate. Both are immutable at deployment, so final values are required before any mainnet deployment. No opening curve in the candidate (a contained addition if launch sniping is judged to matter).
 Importance: High
 Why it came up: Phase 4 venue (R12). The coin needs a market and a fee that funds Checks without an owner who can
@@ -182,7 +182,7 @@ Reversibility: immutable once launched; everything before launch is free to chan
 Owner action: Required before real execution (final fee rate and opening tick).
 
 ### D010: Game surplus: daily release above a reserve, burned in capped chunks without an oracle
-Status: REVIEW
+Status: SUPERSEDED by D013
 Importance: Medium
 Why it came up: Phase 4. The spec's waterfall ends with buying and burning coin from distributable game surplus, with
 a restricted swap path, slippage limits and a trusted quote. There is no trusted coin price (D006).
@@ -203,7 +203,7 @@ above half the venue fee's share of the pool's virtual ETH depth at the opening 
 placeholder fee (1%) and tick (161,200) the depth is 99.89 ETH and the largest chunk 0.4995 ETH.
 
 ### D011: rc1 audit findings and their fixes
-Status: REVIEW
+Status: CLOSED 2026-11-03 (D015). The purchaser gate (H2) and timelock launch (H3) carry into the rebase; the H1 chunk bound is superseded by D013's burner bounds; FwaFeeBuyer (M1) is replaced by collection-games' FwaFeeRoutes
 Importance: High
 Why it came up: The owner-arranged fresh-discovery audit of `rc1` (docs/review/rc1-audit.md) reproduced three High and
 one Medium finding plus a deployment-gate defect on a fork pinned at block 26,305,656.
@@ -240,7 +240,7 @@ deployed (not deployed).
 Owner action: Optional review (the H1 chunk bound caps burn speed).
 
 ### D012: Rebase on collection-games: whose authority over migration and fee routing?
-Status: AWAITING OWNER DECISION
+Status: APPROVED 2026-11-03, option (b). Owner: "keep this one more locked down". Invariants 10 and 11 stand.
 Importance: High
 Why it came up: The owner directed that ripe0x/collection-games (409ca75) be the base (docs/REBASE_PLAN.md). Its
 administration is one owner acting at once, with migration and fee-recipient changes proposed by that owner on
@@ -258,13 +258,13 @@ Recommended choice: (b). It keeps the invariants and drops the residual "council
 risk of the UUPS Engine in favour of a public, code-pinned migration.
 Tradeoff: Migrations and fee-route changes take 7 days and need the council; the founder alone cannot ship a new
 system.
-Action taken: None in code. Plan phases R1-R6 do not depend on it; R7 builds (b) and stays under REVIEW until
-decided.
+Action taken: None in code yet. Plan phase R7 builds (b). Each instant owner power that can move value gets a
+constant bound or moves behind the timelock. Every constant gets a test in which a hostile owner calls the function.
 Reversibility: Cheap before deployment; after deployment only through a migration.
-Owner action: Required before finalization.
+Owner action: None (approved).
 
 ### D013: Coin market mechanics from collection-games
-Status: REVIEW
+Status: APPROVED 2026-11-03, option (b) as recommended. Supersedes D009 (fee and curve) and D010.
 Importance: High
 Why it came up: Collection-games' hook, token and burner replace D009 and D010: a 5% fee, an immutable 69% opening
 curve against snipers, transfers restricted to the canonical pool (with an allowlist) so that side pools cannot avoid
@@ -276,12 +276,15 @@ Recommended choice: (b). No $LAYER share. The milestone release fires on a Check
 `unrestrict` stays reachable through the timelock.
 Tradeoff: Restriction blocks wallet transfers and exchange deposits until lifted; the opening curve can make
 scanners label the coin a honeypot for about an hour (collection-games LAUNCH_CHECKLIST item 6).
-Action taken: None yet (plan phase R6).
+Action taken: None yet (plan phase R6). Collection-games' launch values (5% each way, 69% curve falling one point
+a minute, slice <= 1 ETH, impact <= 5%, deviation <= 3%) stand as placeholders until this project's model sets
+them. The opening tick and the curve are immutable, so they need the owner's sign-off on the modelled numbers
+before deployment.
 Reversibility: Hook curve and opening tick are immutable once deployed; fee rate and burner cadence are settings.
-Owner action: Required before finalization.
+Owner action: Confirm the modelled launch values before deployment.
 
 ### D014: FWA venue after V2 pool creation was switched off
-Status: REVIEW
+Status: APPROVED 2026-11-03, option (a): stay on FWA V2.
 Importance: High
 Why it came up: FWA switched off V2 pool creation at block 26,329,277 and deployed community pool contracts
 (factory 0x8919…477C, block 26,328,828), per collection-games D89. Every fork test here is pinned earlier (26,302,000).
@@ -289,9 +292,35 @@ A community pool pays its owner the base price only; collection-games estimated 
 Options considered: (a) V2, with FWA reopening creation for this deploy; (b) community pools from the start.
 Recommended choice: (a) if FWA reopens V2 for us, with the community pool as the real migration target that replaces
 `NextGenControllerMock` (invariant 11 evidence). Otherwise (b), with the economics re-run at the lower margin.
-Action taken: None yet (plan phases R0 and R2; collection-games 72d5179 is the reference port).
+Evidence (read-only eth_call on the V2 factory 0xf5a3…300c through the Tenderly public gateway, 2026-11-03):
+`poolCreationEnabled` true at 26,329,276, false from 26,329,277 to 26,335,859, true from 26,335,860
+(2026-11-03 17:46:23 UTC) through 26,337,042 (latest read). At the latest block `betaAccess` false, `edgeBps` 500,
+`vrfRequestsPaused` false, `maxPoolsPerWallet` 1. At this repository's pinned block 26,302,000, `betaAccess` was
+true.
+Action taken: Venue fixed as V2. Plan phase R2 adds a fork profile after block 26,335,860 that creates a real V2 pool
+with no locally opened switches. The community pool port (collection-games 72d5179) is used only as the real
+migration target in R7. The deploy keeps its `poolCreationEnabled()` precheck.
 Reversibility: Pool ownership is permanent per pool; changing venue later means a migration.
-Owner action: Required before real execution.
+Owner action: None (approved).
+
+### D015: Remaining rebase choices (owner: "do your recs for the rest")
+Status: APPROVED 2026-11-03, as recommended below.
+Importance: Medium
+- Seaport adapter: not built. The per-tier standing bid (D007) is the only acquisition route. In collection-games
+  the adapter drew the most audit findings (F1, F2, B-F1, R3-12), and sellers can already sell at the bid directly.
+- Sunset: adopted as the built-in end state. Every Check is auctioned in a Dutch auction from 150% of its schedule
+  price down to 25% over 30 days; every wei goes to buy-and-burn; the owner can trigger it at once and it is final
+  (D012). It can end the game early, but it cannot send value to anyone.
+- Keeper pay: collection-games' structure. Gas plus a flat fee, within an allowance earned from captures; players
+  run light upkeep through the DrawRouter unpaid; the owner fixes how much one call books. Per D012, the gas-price
+  cap, overhead and flat fee get constant upper bounds. Launch placeholders are collection-games' (3 gwei cap,
+  70,000 overhead, 0.0002 ETH fee, 1% of each capture, 0.2 ETH opening allowance), until the maintenance model sets
+  them.
+- Daily decay: built, off at launch (collection-games D78), as an addition to the per-draw decay (D005), never below
+  its floor, with a constant bound on the rate.
+- Older optional reviews: D002 (survival counts draws that allocated a prize) and D008 (the composition window
+  counted in draws) are kept as implemented. D004 is superseded by the board markup setting (10% placeholder, the
+  same as D004's 10% over backing). D010 is superseded by D013.
 
 Use this template:
 
