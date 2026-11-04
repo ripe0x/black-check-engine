@@ -73,6 +73,7 @@ contract CollectionToken is ERC20, IVenuePolicy {
     error SupplyMismatch();
     error ZeroAddress();
     error NotHook();
+    error NotCouncil();
     error NotOwner();
     error NotRestricted();
     error CannotAllow();
@@ -146,10 +147,11 @@ contract CollectionToken is ERC20, IVenuePolicy {
         }
     }
 
-    /// @notice Adds `account` to the allowlist or removes it. The Admin owner only. Neither the zero address nor the
-    ///         PoolManager can be allowed (every transfer through the PoolManager keeps the swap rule).
+    /// @notice Adds `account` to the allowlist or removes it. The council only (D012: an allowed venue could host
+    ///         trading that pays no fee). Neither the zero address nor the PoolManager can be allowed (every transfer
+    ///         through the PoolManager keeps the swap rule).
     function setAllowed(address account, bool allowed) external {
-        if (msg.sender != admin.owner()) revert NotOwner();
+        if (msg.sender != admin.council()) revert NotCouncil();
         if (account == address(0) || account == poolManager) revert CannotAllow();
         if (isAllowed[account] == allowed) return;
         isAllowed[account] = allowed;
@@ -236,9 +238,9 @@ contract CollectionToken is ERC20, IVenuePolicy {
         return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
     }
 
-    /// @notice Lifts the transfer restriction for good. The Admin owner only; there is no way to restore it.
+    /// @notice Lifts the transfer restriction for good. The council only (D012, D013); there is no way to restore it.
     function unrestrict() external {
-        if (msg.sender != admin.owner()) revert NotOwner();
+        if (msg.sender != admin.council()) revert NotCouncil();
         if (!restricted) revert NotRestricted();
         restricted = false;
         emit Unrestricted();

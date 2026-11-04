@@ -29,13 +29,13 @@ contract CoinAllowlistForkTest is ForkBase {
     }
 
     function _allow(address a, bool on) internal {
-        vm.prank(owner);
+        vm.prank(council);
         sys.token.setAllowed(a, on);
     }
 
     function test_onlyTheOwnerSetsIt() public {
         vm.prank(alice);
-        vm.expectRevert(CollectionToken.NotOwner.selector);
+        vm.expectRevert(CollectionToken.NotCouncil.selector);
         sys.token.setAllowed(address(box), true);
         _allow(address(box), true);
         assertTrue(sys.token.isAllowed(address(box)));
@@ -68,7 +68,7 @@ contract CoinAllowlistForkTest is ForkBase {
     }
 
     function test_poolManagerAndZeroCannotBeAllowed() public {
-        vm.startPrank(owner);
+        vm.startPrank(council);
         vm.expectRevert(CollectionToken.CannotAllow.selector);
         sys.token.setAllowed(cfg.poolManager, true);
         vm.expectRevert(CollectionToken.CannotAllow.selector);
@@ -108,7 +108,7 @@ contract CoinAllowlistForkTest is ForkBase {
 
     function test_listIsCapped() public {
         uint256 cap = sys.token.MAX_ALLOWED();
-        vm.startPrank(owner);
+        vm.startPrank(council);
         for (uint256 i; i < cap; ++i) {
             sys.token.setAllowed(address(uint160(0x1000 + i)), true);
         }
@@ -121,13 +121,13 @@ contract CoinAllowlistForkTest is ForkBase {
     }
 
     /// After a renounce the list is frozen as it is (nobody holds the owner's key).
-    function test_frozenAfterRenounce() public {
+    /// D012: the allowlist is the council's, so the owner renouncing changes nothing about it.
+    function test_ownerRenounceLeavesTheCouncilsAllowlist() public {
         _allow(address(box), true);
         vm.prank(owner);
         sys.admin.renounceOwnership();
-        vm.prank(owner);
-        vm.expectRevert(CollectionToken.NotOwner.selector);
+        vm.prank(council);
         sys.token.setAllowed(address(box), false);
-        assertTrue(sys.token.isAllowed(address(box)), "still allowed");
+        assertFalse(sys.token.isAllowed(address(box)), "the council still decides");
     }
 }

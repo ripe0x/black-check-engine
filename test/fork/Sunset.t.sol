@@ -120,14 +120,14 @@ contract SunsetForkTest is ForkBase {
     /// (Apes in custody, capital, future fees) reaches buybacks. A migration likewise ties the fees to its successor.
     function test_sunsetIsFinal() public {
         address other = address(new SunsetOther());
-        vm.prank(owner);
+        vm.prank(council);
         sys.migration.proposeFeeRecipient(other);
         _sunset();
         assertEq(sys.migration.pendingFeeRecipient(), address(0), "the pending fee recipient cancelled");
         vm.warp(block.timestamp + 72 hours);
         vm.expectRevert(MigrationAuthority.NothingPending.selector);
         sys.migration.executeFeeRecipient();
-        vm.startPrank(owner);
+        vm.startPrank(council);
         vm.expectRevert(MigrationAuthority.SunsetFinal.selector);
         sys.migration.propose(other);
         vm.expectRevert(MigrationAuthority.Started.selector);
@@ -142,7 +142,7 @@ contract SunsetForkTest is ForkBase {
         playMany(alice, 40, 3);
         govern(
             address(sys.game),
-            abi.encodeCall(CollectionGame.setKeeperParams, (CollectionGame.KeeperParams(1_000_000 gwei, 10_000_000, 10_000, 0)))
+            abi.encodeCall(CollectionGame.setKeeperParams, (CollectionGame.KeeperParams(30 gwei, 200_000, 0.001 ether, 0)))
         );
         _sunset();
         uint256 avail = sys.game.keeperAvailable();

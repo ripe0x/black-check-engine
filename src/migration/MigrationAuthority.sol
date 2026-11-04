@@ -22,6 +22,9 @@ interface IFeeHook {
 }
 
 /// @title MigrationAuthority
+/// @dev Changed for D012 (this repository): a migration or a new fee recipient is proposed by the council timelock
+///      (7 days, guardian cancels) and then waits this contract's own `DELAY`; the owner keeps only the instant sunset,
+///      whose only destination is buy-and-burn. Provenance: ripe0x/collection-games (409ca75).
 /// @notice The only way the game ends or moves, and the only way trading fees change destination. Every action that
 ///         moves assets or fees to a new address is public `DELAY` (72 hours) before it can run, and runs only the code
 ///         that was proposed (the address's code hash is pinned at proposal). The one exception moves value only to
@@ -96,7 +99,7 @@ contract MigrationAuthority is ReentrancyGuard, Governed {
     /// @notice Proposes `successor_`, a contract, executable after `DELAY`; its code is pinned. address(0) cancels.
     ///         Replaces any pending proposal and restarts the delay. Refused after a sunset: what the sunset was handed,
     ///         and everything still to reach it, goes to buybacks only.
-    function propose(address successor_) external onlyOwner {
+    function propose(address successor_) external onlyCouncil {
         if (successor == sunsetter) revert SunsetFinal();
         bytes32 h;
         if (successor_ != address(0)) {
@@ -167,7 +170,7 @@ contract MigrationAuthority is ReentrancyGuard, Governed {
     /// @notice Proposes where trading fees go, a contract, executable after `DELAY`; its code is pinned. address(0)
     ///         cancels. It must accept ETH from the PoolManager in the middle of a swap, cheaply, or swaps revert.
     ///         Only while the game runs: once a migration or the sunset has started, fees follow the successor.
-    function proposeFeeRecipient(address recipient) external onlyOwner {
+    function proposeFeeRecipient(address recipient) external onlyCouncil {
         if (started) revert Started();
         bytes32 h;
         if (recipient != address(0)) {

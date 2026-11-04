@@ -38,16 +38,20 @@ contract GovernanceForkTest is ForkBase {
     }
 
     /// The markup and the keeper allowance rate are the owner's choice, 0-100%: replacements list at whatever is set.
-    function test_markupAndOpsAreBroad() public {
-        govern(address(sys.game), abi.encodeCall(CollectionGame.setPricing, (0, 0)));
+    /// D012: the markup can go no lower than 5% (no prize priced at a loss to the protocol); the rest stays broad.
+    function test_markupHasAFloorOpsAreBroad() public {
+        vm.prank(owner);
+        vm.expectRevert(Governed.OutOfBounds.selector);
+        sys.game.setPricing(499, 0);
+        govern(address(sys.game), abi.encodeCall(CollectionGame.setPricing, (500, 0)));
         playMany(alice, 30, 2); // replacements list under the new pricing
         uint256 n = sys.game.liveCount();
-        uint256 zero;
+        uint256 floor;
         for (uint256 i; i < n; ++i) {
             (,,,, uint16 markup, uint16 ops,) = sys.game.items(sys.game.liveAt(i));
-            if (markup == 0 && ops == 0) ++zero;
+            if (markup == 500 && ops == 0) ++floor;
         }
-        assertGt(zero, 0, "prizes listed at no markup");
+        assertGt(floor, 0, "prizes listed at the floor markup");
         govern(address(sys.game), abi.encodeCall(CollectionGame.setPricing, (10_000, 10_000)));
         vm.prank(owner);
         vm.expectRevert(Governed.OutOfBounds.selector);
@@ -160,9 +164,9 @@ contract GovernanceForkTest is ForkBase {
         sys.poolOwner.setListingParams(lp);
         vm.expectRevert(CollectionHook.NotMigrator.selector);
         sys.hook.setFeeRecipient(stranger);
-        vm.expectRevert(Governed.NotOwner.selector);
+        vm.expectRevert(Governed.NotCouncil.selector);
         sys.migration.propose(stranger);
-        vm.expectRevert(Governed.NotOwner.selector);
+        vm.expectRevert(Governed.NotCouncil.selector);
         sys.migration.proposeFeeRecipient(stranger);
         vm.expectRevert(Governed.NotOwner.selector);
         sys.migration.sunset();

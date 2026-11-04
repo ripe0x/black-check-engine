@@ -27,7 +27,9 @@ contract RefusingRouter {
     }
 }
 
-/// @notice D90: the hook takes 1% of each trading fee once the opening curve is down to the ordinary fee and pays it
+/// @notice The $LAYER share mechanism kept from collection-games (D90). It is off at launch for Checks (D016) and only the
+///         council can turn it on (D012); this suite turns it on (1%) in its own configuration to keep the mechanism
+///         tested. D90: the hook takes 1% of each trading fee once the opening curve is down to the ordinary fee and pays it
 ///         to the LayerTap, which forwards it (anyone calls `flush`) to artcoins' $LAYER burn router; the rest of the
 ///         fee goes to the vault. The owner sets the share (0-5%) and the tap.
 contract LayerShareForkTest is ForkBase {
@@ -37,7 +39,11 @@ contract LayerShareForkTest is ForkBase {
     LayerTap tap;
 
     function setUp() public {
-        deployChecks();
+        setUpFork();
+        cfg = _testChecksConfig();
+        cfg.layerBps = 100;
+        cfg.layerBurner = MAINNET_LAYER_BURNER;
+        _deploy();
         openMarket();
         tap = LayerTap(payable(sys.layerTap));
     }
@@ -111,11 +117,14 @@ contract LayerShareForkTest is ForkBase {
     }
 
     /// The owner sets the share (at most 5%, 0 turns it off) and the tap (a contract); nobody else can.
-    function test_ownerSetsShareAndTap() public {
+    function test_councilSetsShareAndTap() public {
         vm.prank(alice);
         vm.expectRevert();
         sys.hook.setLayer(address(tap), 200);
-        vm.startPrank(owner);
+        vm.prank(owner);
+        vm.expectRevert(Governed.NotCouncil.selector); // D012: the council's, not the owner's
+        sys.hook.setLayer(address(tap), 200);
+        vm.startPrank(council);
         vm.expectRevert(Governed.OutOfBounds.selector);
         sys.hook.setLayer(address(tap), 501);
         vm.expectRevert(Governed.OutOfBounds.selector);
@@ -138,7 +147,7 @@ contract LayerShareForkTest is ForkBase {
     /// A router that refuses ETH never blocks trading: the share waits in the tap.
     function test_refusingRouterNeverBlocksTrading() public {
         LayerTap stuck = new LayerTap(address(new RefusingRouter(LAYER)));
-        vm.prank(owner);
+        vm.prank(council);
         sys.hook.setLayer(address(stuck), 100);
         pastOpeningCurve();
         buyCoin(alice, 20 ether);

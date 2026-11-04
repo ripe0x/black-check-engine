@@ -293,15 +293,18 @@ contract MarketForkTest is ForkBase {
         (bool inR, bool outR, IVenuePolicy.ExternalVenue[] memory ext) = t.externalVenues();
         assertTrue(inR && outR);
         assertEq(ext.length, 0);
-        // only the owner, once
-        vm.expectRevert(CollectionToken.NotOwner.selector);
+        // only the council, once
+        vm.expectRevert(CollectionToken.NotCouncil.selector);
         t.unrestrict();
         vm.prank(owner);
+        vm.expectRevert(CollectionToken.NotCouncil.selector); // D012: the council's, not the owner's
+        t.unrestrict();
+        vm.prank(council);
         vm.expectEmit(address(t));
         emit IVenuePolicy.VenueEnforcementChanged(IVenuePolicy.VenueEnforcement.Preferred);
         t.unrestrict();
         assertFalse(t.restricted());
-        vm.prank(owner);
+        vm.prank(council);
         vm.expectRevert(CollectionToken.NotRestricted.selector);
         t.unrestrict();
         assertEq(uint8(t.venueEnforcement()), uint8(IVenuePolicy.VenueEnforcement.Preferred));

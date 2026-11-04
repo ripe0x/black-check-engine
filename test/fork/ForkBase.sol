@@ -55,8 +55,11 @@ abstract contract ForkBase is Test, LaunchConfig {
     int24 internal constant START_TICK = 173_000; // ~32.6M coins per ETH: ~30.7 ETH opening FDV (D70)
 
     address internal owner = makeAddr("cg.owner.owner");
-    /// @dev Stands in for the council TimelockController (D012) until the governance phase deploys the real one.
-    address internal council = makeAddr("checks.council");
+    /// @dev The council Safe (the timelock's proposer) and the guardian. `council` is the deployed timelock itself:
+    ///      `councilCall` acts as an executed council proposal (Governance.t.sol runs the real schedule and delay).
+    address internal councilSafe = makeAddr("checks.council.safe");
+    address internal guardian = makeAddr("checks.guardian");
+    address internal council;
     address internal keeper = makeAddr("cg.keeper");
     Config internal cfg;
     System internal sys;
@@ -97,12 +100,12 @@ abstract contract ForkBase is Test, LaunchConfig {
 
     /// @dev The launch configuration under a test coin identity (the postflight refuses the placeholders, invariant 9).
     function _testChecksConfig() internal view returns (Config memory c) {
-        c = _checksConfig(owner, council);
+        c = _checksConfig(owner, councilSafe, guardian);
         c.name = "Survival Test";
         c.symbol = "SURVT";
     }
 
-    /// @dev Calls `target` as the council (in the governance phase: through the real timelock).
+    /// @dev Calls `target` as the council timelock, as an executed council proposal would.
     function councilCall(address target, bytes memory data) internal {
         vm.prank(council);
         (bool ok, bytes memory ret) = target.call(data);
@@ -118,6 +121,7 @@ abstract contract ForkBase is Test, LaunchConfig {
         cfg.create2Direct = true;
         vm.deal(address(this), 10 ether);
         sys = _deploySystem(cfg, address(this));
+        council = address(sys.council);
         postflight(cfg, sys, address(this));
         swapper = new Swapper(IPoolManager(cfg.poolManager), sys.liquidity.poolKey());
     }

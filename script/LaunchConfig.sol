@@ -169,9 +169,12 @@ abstract contract LaunchConfig is DeploySystem {
 
     /// @notice Checks Originals. The coin's name and symbol are placeholders the postflight refuses (invariant 9): a
     ///         deployment sets its own.
-    function _checksConfig(address owner, address council) internal pure returns (Config memory c) {
+    function _checksConfig(address owner, address councilSafe, address guardian) internal pure returns (Config memory c) {
         c = _collectionConfig(owner, MAINNET_CHECKS, "Placeholder Coin", "BLACK");
-        c.council = council;
+        // D012: the council Safe proposes through a 7-day timelock; the guardian cancels
+        c.councilSafe = councilSafe;
+        c.guardian = guardian;
+        c.councilDelay = 7 days;
         c.editions = MAINNET_EDITIONS;
         // D003: price per tier, council-settable. 80-Check floor 0.25 ETH (late October 2026) x Original units, no
         // rarity premium: 80, 40, 20, 10, 5, 4, 1 and Black = 1, 2, 4, 8, 16, 32, 64 and 4,096 units
@@ -196,6 +199,13 @@ abstract contract LaunchConfig is DeploySystem {
         // D006: ETH buyouts at schedule + 25%; coin buyouts disabled at launch (the council enables tiers later)
         uint256[8] memory none;
         c.buyout = ChecksDesk.BuyoutParams({ethMarkupBps: 2_500, coinPrice: none});
-        c.refPrice = 0.25 ether; // the 80-Check floor: the first bid (replaced by the per-tier bid, plan R5)
+        c.refPrice = 0.25 ether; // the 80-Check floor: the first bid's reference
+        // D013, D016: no $LAYER share (an artcoins arrangement, not a Checks requirement)
+        c.layerBps = 0;
+        c.layerBurner = address(0);
+        // D016 (sim/results/checks_market.md): collection-games' market values hold for Checks. Opening tick 173,000
+        // (about 30.7 ETH fully diluted: a 1 ETH buy moves the price 6.3%; a buyback slice within the 3% impact bound
+        // is about 0.46 ETH, so a Check win's pot burns in one or two slices), 5% each way after the fixed opening
+        // curve, every gameplay buyback held until a Check is won and then released whole (c.milestoneBps, c.tiers)
     }
 }

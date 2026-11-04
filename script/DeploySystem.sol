@@ -20,6 +20,7 @@ import {DrawRouter, IGameSync} from "../src/periphery/DrawRouter.sol";
 import {SeaportAdapter} from "../src/periphery/SeaportAdapter.sol";
 import {LayerTap} from "../src/periphery/LayerTap.sol";
 import {ChecksDesk} from "../src/checks/ChecksDesk.sol";
+import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 
 interface IPacksView {
     function shapes() external view returns (address);
@@ -45,7 +46,9 @@ abstract contract DeploySystem {
     struct Config {
         // administration
         address owner; // the operator: routine bounded settings (two-step transferable, renounceable)
-        address council; // the council timelock: value and custody powers (D012)
+        address councilSafe; // the council (a Safe, 3 of 5 tentative): the timelock's only proposer (D012)
+        address guardian; // cancels a scheduled council action
+        uint256 councilDelay; // the timelock's delay (7 days)
         // external
         address collection; // Checks Originals
         address editions; // Checks Editions (never a purchaser)
@@ -103,6 +106,7 @@ abstract contract DeploySystem {
 
     struct System {
         Admin admin;
+        TimelockController council; // value and custody powers (D012): Admin.council
         MigrationAuthority migration;
         ProtocolLiquidity liquidity;
         CollectionToken token;
@@ -143,7 +147,8 @@ abstract contract DeploySystem {
     }
 
     function _deployGovAndToken(Config memory c, System memory s, address deployer) internal {
-        s.admin = new Admin(c.owner, c.council);
+        s.council = _deployCouncil(c, deployer);
+        s.admin = new Admin(c.owner, address(s.council));
         address a = address(s.admin);
         s.migration = new MigrationAuthority(a);
         // The coin mints its whole supply to ProtocolLiquidity, which needs the coin's address: predict it.
@@ -156,6 +161,17 @@ abstract contract DeploySystem {
             c.name, c.symbol, c.coinImage, c.coinDescription, c.supply, to, amounts, a, address(s.liquidity), c.poolManager
         );
         _check(address(s.token) == predictedToken, "token address");
+    }
+
+    /// @dev OpenZeppelin TimelockController: the council Safe proposes, the guardian (and the Safe) cancel, anyone
+    ///      executes once the delay has passed, and the timelock administers itself (no deployer power remains).
+    function _deployCouncil(Config memory c, address deployer) internal returns (TimelockController t) {
+        address[] memory proposers = new address[](1);
+        proposers[0] = c.councilSafe;
+        address[] memory executors = new address[](1); // address(0): anyone executes
+        t = new TimelockController(c.councilDelay, proposers, executors, deployer); // admin only until renounced below
+        t.grantRole(t.CANCELLER_ROLE(), c.guardian);
+        t.renounceRole(t.DEFAULT_ADMIN_ROLE(), deployer);
     }
 
     function _deployHolders(Config memory c, System memory s) internal {
@@ -299,7 +315,7 @@ abstract contract DeploySystem {
     function postflight(Config memory c, System memory s, address deployer) public view {
         // administration: one Admin naming the owner, read by every governed contract; no deployer power left
         _check(s.admin.owner() == c.owner && s.admin.pendingOwner() == address(0), "owner");
-        _check(s.admin.council() == c.council && c.council != c.owner, "council");
+        _councilChecks(c, s, deployer);
         address[8] memory governed = [
             address(s.liquidity), address(s.burner), address(s.vault), address(s.hook), address(s.poolOwner),
             address(s.game), address(s.migration), address(s.desk)
@@ -460,6 +476,20 @@ abstract contract DeploySystem {
         _check(s.admin.isProtected(s.packs) && s.admin.deployer() == address(0), "protected packs");
     }
 
+    /// @dev The council timelock (D012): its delay, roles and independence from the owner and the deployer.
+    function _councilChecks(Config memory c, System memory s, address deployer) internal view {
+        TimelockController t = s.council;
+        _check(s.admin.council() == address(t) && c.councilSafe != c.owner && c.guardian != c.owner, "council");
+        _check(t.getMinDelay() == c.councilDelay && c.councilDelay >= 7 days, "council delay");
+        _check(t.hasRole(t.PROPOSER_ROLE(), c.councilSafe) && !t.hasRole(t.PROPOSER_ROLE(), c.owner), "council proposer");
+        _check(t.hasRole(t.CANCELLER_ROLE(), c.guardian) && t.hasRole(t.EXECUTOR_ROLE(), address(0)), "council roles");
+        _check(
+            !t.hasRole(t.DEFAULT_ADMIN_ROLE(), deployer) && !t.hasRole(t.DEFAULT_ADMIN_ROLE(), address(this))
+                && !t.hasRole(t.DEFAULT_ADMIN_ROLE(), c.owner) && t.hasRole(t.DEFAULT_ADMIN_ROLE(), address(t)),
+            "council admin"
+        );
+    }
+
     /// @dev Names, presentation and the pool owner's purchaser exclusions (split out of `postflight` for stack depth).
     function _postflightIdentity(Config memory c, System memory s) internal view {
         _check(_eq(s.token.name(), c.name) && _eq(s.token.symbol(), c.symbol), "coin identity");
@@ -487,13 +517,13 @@ abstract contract DeploySystem {
     ///      LayerTap included when there is one.
     ///      Checks Editions too: an Edition contract holding a won Check could never pass it on.
     function _systemContracts(Config memory c, System memory s) internal pure returns (address[] memory sys) {
-        sys = new address[](s.layerTap == address(0) ? 11 : 12);
+        sys = new address[](s.layerTap == address(0) ? 12 : 13);
         (sys[0], sys[1], sys[2], sys[3], sys[4]) =
             (address(s.burner), address(s.hook), address(s.liquidity), address(s.token), address(s.admin));
         (sys[5], sys[6], sys[7], sys[8], sys[9]) =
             (address(s.sunset), address(s.adapter), address(s.lens), address(s.drawRouter), s.packRenderer);
-        sys[10] = c.editions;
-        if (s.layerTap != address(0)) sys[11] = s.layerTap;
+        (sys[10], sys[11]) = (c.editions, address(s.council));
+        if (s.layerTap != address(0)) sys[12] = s.layerTap;
     }
 
     function _eq(string memory a, string memory b) private pure returns (bool) {

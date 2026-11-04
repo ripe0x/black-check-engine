@@ -191,12 +191,22 @@ contract KeeperPayForkTest is ForkBase {
         govern(address(sys.game), abi.encodeCall(CollectionGame.setKeeperParams, (k)));
         vm.txGasPrice(2 gwei);
         assertEq(sys.game.quoteTip(100_000), 150_000 * 1 gwei + 0.001 ether, "gas at the cap plus the flat fee");
-        k.flatFee = 0.1 ether + 1;
+        k.flatFee = 0.001 ether + 1; // D012: at most 0.001 ETH a call
         vm.prank(owner);
         vm.expectRevert(Governed.OutOfBounds.selector);
         sys.game.setKeeperParams(k);
+        k.flatFee = 0.001 ether;
+        k.maxGasPrice = 30 gwei + 1; // D012: gas reimbursed at no more than 30 gwei
+        vm.prank(owner);
+        vm.expectRevert(Governed.OutOfBounds.selector);
+        sys.game.setKeeperParams(k);
+        k.maxGasPrice = 30 gwei;
+        k.gasOverhead = 200_001; // D012: at most 200,000 gas of overhead
+        vm.prank(owner);
+        vm.expectRevert(Governed.OutOfBounds.selector);
+        sys.game.setKeeperParams(k);
+        k.gasOverhead = 50_000;
         // the delay after players' upkeep (D79): up to an hour, 0 turns it off
-        k.flatFee = 0.1 ether; // the bound itself is allowed
         k.payDelay = 1 hours + 1;
         vm.prank(owner);
         vm.expectRevert(Governed.OutOfBounds.selector);

@@ -98,7 +98,7 @@ contract MigrationForkTest is ForkBase {
 
     /// The owner proposes; 72 hours later anyone executes.
     function _authorize(address s) internal {
-        vm.prank(owner);
+        vm.prank(council);
         m.propose(s);
         vm.warp(block.timestamp + 72 hours);
     }
@@ -245,10 +245,10 @@ contract MigrationForkTest is ForkBase {
         vm.expectRevert();
         m.propose(address(s));
         // only a contract can be proposed
-        vm.prank(owner);
+        vm.prank(council);
         vm.expectRevert(MigrationAuthority.NotAContract.selector);
         m.propose(trader);
-        vm.prank(owner);
+        vm.prank(council);
         m.propose(address(s));
         assertEq(m.executableAt(), block.timestamp + 72 hours);
         assertEq(m.pendingCodeHash(), address(s).codehash, "its code is pinned");
@@ -256,7 +256,7 @@ contract MigrationForkTest is ForkBase {
         vm.expectRevert(MigrationAuthority.TooEarly.selector);
         m.execute();
         // the owner can withdraw it
-        vm.prank(owner);
+        vm.prank(council);
         m.propose(address(0));
         vm.warp(block.timestamp + 2 days);
         vm.expectRevert(MigrationAuthority.NothingPending.selector);
@@ -291,12 +291,12 @@ contract MigrationForkTest is ForkBase {
     function test_feeRecipientMovesOnlyAfterTheNotice() public {
         MockSuccessor splitter = _successor();
         vm.prank(trader);
-        vm.expectRevert(Governed.NotOwner.selector);
+        vm.expectRevert(Governed.NotCouncil.selector);
         m.proposeFeeRecipient(address(splitter));
-        vm.prank(owner);
+        vm.prank(council);
         vm.expectRevert(MigrationAuthority.NotAContract.selector);
         m.proposeFeeRecipient(trader);
-        vm.prank(owner);
+        vm.prank(council);
         m.proposeFeeRecipient(address(splitter));
         assertEq(m.feeExecutableAt(), block.timestamp + 72 hours);
         vm.warp(block.timestamp + 72 hours - 1);
@@ -358,7 +358,7 @@ contract MigrationForkTest is ForkBase {
     ///         the owner can always send the rest to buybacks at once, never anywhere else.
     function test_sunsetOverridesAMigration() public {
         MockSuccessor s = _successor();
-        vm.prank(owner);
+        vm.prank(council);
         m.propose(address(s));
         govern(address(m), abi.encodeCall(MigrationAuthority.sunset, ()));
         assertEq(m.pending(), address(0), "the pending proposal is cancelled");

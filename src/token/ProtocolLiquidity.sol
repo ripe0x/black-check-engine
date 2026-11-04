@@ -87,9 +87,11 @@ contract ProtocolLiquidity is IUnlockCallback, ReentrancyGuard, Governed {
         });
     }
 
-    /// @notice Opens the market at `startTick`. Owner, once, and only after the game's FWA pool exists. The tick sets
+    /// @notice Opens the market at `startTick`. Owner or council (a lost owner key cannot hold the market closed; rc2
+    ///         audit H3), once, and only after the game's FWA pool exists. The tick sets
     ///         the opening price (coin per ETH) and with it the opening valuation: supply / (coins per ETH).
-    function launch() external nonReentrant onlyOwner {
+    function launch() external nonReentrant {
+        if (msg.sender != owner() && msg.sender != admin.council()) revert NotOwner();
         if (launched) revert AlreadyLaunched();
         // the coin trades only once the game's FWA pool exists, the deployment's last step before it (D91)
         if (IFwaPoolOf(poolOwner).pool() == address(0)) revert NoFwaPool();

@@ -153,8 +153,9 @@ contract CollectionHook is BaseHook, Governed {
     }
 
     /// @notice The $LAYER tap and share (0-5% of each fee after the opening curve; 0 turns it off). A tap must be a
-    ///         contract, or address(0) with a 0 share.
-    function setLayer(address tap, uint256 bps) external onlyOwner {
+    ///         contract, or address(0) with a 0 share. Council only (D012): it redirects part of every fee. Off at
+    ///         launch for Checks (D016).
+    function setLayer(address tap, uint256 bps) external onlyCouncil {
         _setLayer(tap, bps);
     }
 

@@ -10,7 +10,8 @@ import {LaunchConfig} from "./LaunchConfig.sol";
 ///         Never run against mainnet from an automated session; use `script/deploy.sh <env>` (dry run by default).
 /// @dev Environment (values only, see script/env/*.env):
 ///      OWNER                   the operator (Admin.owner: routine bounded settings; two-step transferable, renounceable)
-///      COUNCIL                 the council TimelockController (Admin.council: value and custody powers, D012)
+///      COUNCIL_SAFE            the council Safe: the only proposer to the 7-day council timelock (D012)
+///      GUARDIAN                cancels scheduled council actions
 ///      COIN_NAME, COIN_SYMBOL  coin identity (placeholders in LaunchConfig if unset)
 ///      REF_PRICE_WEI           the reference price: the live floor on the day; the live bid's first activation
 ///                              threshold is 100% of it (OWNER; D64)
@@ -36,7 +37,7 @@ contract Deploy is Script, LaunchConfig {
     }
 
     function _envConfig() internal view virtual returns (Config memory c) {
-        c = _checksConfig(vm.envAddress("OWNER"), vm.envAddress("COUNCIL"));
+        c = _checksConfig(vm.envAddress("OWNER"), vm.envAddress("COUNCIL_SAFE"), vm.envAddress("GUARDIAN"));
         c.name = vm.envOr("COIN_NAME", c.name);
         c.symbol = vm.envOr("COIN_SYMBOL", c.symbol);
         c.coinImage = vm.envOr("COIN_IMAGE", c.coinImage);
@@ -67,7 +68,9 @@ contract Deploy is Script, LaunchConfig {
         vm.serializeAddress(k, "hook", address(s.hook));
         vm.serializeAddress(k, "poolOwner", address(s.poolOwner));
         vm.serializeAddress(k, "desk", address(s.desk));
-        vm.serializeAddress(k, "council", c.council);
+        vm.serializeAddress(k, "council", address(s.council));
+        vm.serializeAddress(k, "councilSafe", c.councilSafe);
+        vm.serializeAddress(k, "guardian", c.guardian);
         vm.serializeAddress(k, "sunset", address(s.sunset));
         vm.serializeAddress(k, "adapter", address(s.adapter));
         vm.serializeAddress(k, "lens", address(s.lens));

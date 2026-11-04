@@ -328,6 +328,27 @@ Importance: Medium
   counted in draws) are kept as implemented. D004 is superseded by the board markup setting (10% placeholder, the
   same as D004's 10% over backing). D010 is superseded by D013.
 
+### D016: Coin market launch values for Checks
+Status: APPROVED 2026-11-03 by delegation (owner: "figure it out yourself"); provisional on the model, open to review
+Importance: High (the opening tick and the curve are immutable once deployed)
+Why it came up: D013 adopted collection-games' market mechanics; their values were set for a 6 ETH Ape.
+Evidence: `python3 sim/checks_market.py` (sim/results/checks_market.md), on collection-games' exact pool math.
+- Activation needs about 2.62 ETH of fees (first 80-Check 0.25 + board 1.666 + reserve 0.5 + keeper allowance 0.2):
+  7 ETH of first-hour volume if it comes evenly, 22 ETH if traders wait for the end of the curve, at any ordinary
+  fee from 3% to 10% (the curve dominates the first hour).
+- Opening valuation sets depth. At 30.7 ETH (tick 173,000) a 1 ETH buy moves the price 6.3%, the largest buyback
+  slice within the burner's 3% impact bound is 0.46 ETH (a Check win's pot burns in one or two slices), and a
+  minute-0 1 ETH buyer needs 28 ETH of later buying to break even. At 10 ETH slices fall to 0.15 ETH (more,
+  smaller sandwichable slices); at 100 ETH the opening valuation is three times higher for little gain.
+Choice: opening tick 173,000 (about 30.7 ETH fully diluted, as collection-games); ordinary fee 5% each way
+(owner-adjustable to 10%); the fixed 69% opening curve; burner bounds as collection-games (slice at most 1 ETH, 3%
+impact, 2% deviation at launch); all gameplay buybacks held in the milestone reserve and released whole when a Check
+is won (`milestoneBps` 100%, `firstExitBps` 100%, no release for a big Shape or Pack); no $LAYER share.
+Tradeoff: a thin opening market (about 30 ETH of depth) in exchange for buybacks that move the price visibly; the
+opening valuation in dollars moves with ETH until launch.
+Reversibility: tick and curve immutable at deployment; fee, cadence and tiers are bounded settings.
+Owner action: Optional review before deployment.
+
 Use this template:
 
 ### D001: Short question

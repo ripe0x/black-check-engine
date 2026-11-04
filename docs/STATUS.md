@@ -1,14 +1,37 @@
 # Current execution status
 
-Stage: Rebase planned (docs/REBASE_PLAN.md). Previous stage: Phase 5, release candidate `rc2` (commit 6b00eed, local tag) frozen and verified
-(docs/receipts/rc2-verification.md): rc1 plus the rc1 audit fixes. Not re-audited; not deployable until the gates
-below close.
-Branch: `dev` (local). Latest milestone commit: see `git log`.
+Stage: rebase on collection-games (docs/REBASE_PLAN.md), phases R0-R5 built. Tracking PR: ripe0x/black-check-engine#1
+(draft; updated per phase). Not audited, not deployed.
+Branch: `claude/wizardly-shannon-440owk`. The pre-rebase implementation is archived at tag `rc2` (6b00eed).
 
 ## Pinned environment
-- Mainnet fork block 26,302,000; RPC `MAINNET_RPC_URL`, default `https://mainnet.gateway.tenderly.co`.
-- forge 1.8.1, solc 0.8.28 (evm cancun). Submodules: forge-std 7fdf81f, solady v0.1.26, OpenZeppelin v5.1.0.
-- Addresses and runtime code hashes: `test/fork/ForkBase.sol`, `test/fork/Pins.t.sol`.
+- Fork block 26,337,000 for every fork test (after FWA reopened V2 pool creation at 26,335,860; D014, C014). RPC
+  `MAINNET_RPC_URL`; run suites against a local anvil fork of the Tenderly gateway:
+  `anvil --fork-url https://mainnet.gateway.tenderly.co --fork-block-number 26337000 --port 8546`.
+- forge 1.8.1 (982849d, release binaries in ~/.foundry/bin), solc 0.8.28, cancun, `via_ir = true` (C015).
+  `FOUNDRY_PROFILE=fast` (no IR) is for iteration only; its EIP-170 size test fails by design. Use `forge build --force`
+  before a recorded run: an incremental build once kept a stale pool owner inside a test contract.
+- Submodules: forge-std 7fdf81f, solady acd959a, v4-core 59d3ecf, v4-periphery 60cd938, shapes 1b84c10, shape-packs
+  3a463f7. OpenZeppelin only from Shapes' vendored v5.5.0.
+
+## Rebase progress (2026-11-03/04)
+- R0: rc2 tag on the remote; FWA V2 creation off 26,329,277-26,335,859, on again from 26,335,860 (read-only calls).
+- R1 (33440ff): collection-games 409ca75 imported unchanged. Base suite at 26,284,000: 269/281; the 12 throughput
+  studies passed every assertion and stopped only at writing receipts into a missing directory.
+- R2-R5 (b54de86): fork block 26,337,000; council authority in Admin/Governed (D012); Checks pool owner (tiers,
+  schedule, survival C010, decay D005, desk operations); ChecksDesk (composition D008, Black formation, ETH and coin
+  buyouts D006); vault buys 80-Check Originals only, Editions via `sellEdition`, nothing above 120% of the 80 price.
+  Fast profile: 271/272 (size test only). Black formation from 64 real singles: 8,350,399 gas (cap margin 15,099,494).
+- via-IR full run: in progress (record here when done).
+
+## Next executable action
+1. Record the via-IR run (sizes, full suite) and comment on the PR.
+2. R6: coin market values from the model (D013): opening tick, fees, burner cadence, milestone on a Check win.
+3. R7: council timelock deployed for real (OZ TimelockController), MigrationAuthority proposer = council, hard bounds
+   on instant powers (keeper pay, markup floor), hostile-owner suite, real V2 to community-pool migration.
+4. R8: keeper, site, Lens, deploy and rehearsal for Checks. R9: delete leftovers, full verification, audit package.
+
+## History before the rebase
 
 ## Completed
 - Phase 0 (52a0fdc): Foundry project, pinned dependencies, vendored verified sources (`external/`), interfaces
@@ -83,14 +106,6 @@ None.
   opening tick fixed at venue construction, burner reads its pool from the venue), founder review document.
 - Evidence at b608e19: `forge test --match-path 'test/fork/*.t.sol'` 50 passed, 0 failed; strict invariants
   (8 x 40) hold; `node --test keeper/test/policy.test.mjs` 7/7; site `tsc --noEmit` passes.
-
-## Next executable action
-Rebase on collection-games (owner direction, 2026-11-03): docs/REBASE_PLAN.md. Owner decisions recorded 2026-11-03:
-D012 (b), migration and fee routing behind the council timelock, more locked down; D013 adopt collection-games'
-coin-market mechanics with modelled values; D014 stay on FWA V2 (creation reopened at block 26,335,860, verified
-read-only); D015 the remaining choices as recommended. Next: phase R0 (tag `rc2` as the archive of the old
-architecture), then R1 (import collection-games 409ca75 and prove its suite here unchanged). Deployment, the FWA fee
-purchase and the coin launch still need explicit owner authorization.
 
 ## Incidents
 - 2026-10-30: during a rehearsal the lead stopped an anvil process on port 8548 that it had not started (forked near

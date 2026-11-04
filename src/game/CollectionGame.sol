@@ -65,6 +65,12 @@ contract CollectionGame is ICollectionGame, ReentrancyGuard, Governed {
     uint256 internal constant MAX_PATTERN = 1_000;
     uint256 internal constant MAX_GROWTH_STEP = 50;
     uint256 public constant MAX_MARKUP_BPS = 10_000;
+    /// @notice D012: no owner setting prices prizes below cost plus 5% (zero markup let anyone, the owner included,
+    ///         play at the protocol's expense; collection-games D54 had the same floor).
+    uint256 public constant MIN_MARKUP_BPS = 500;
+    /// @notice D012: keeper pay can never be set to drain the allowance faster than real gas costs justify.
+    uint256 public constant MAX_KEEPER_GAS_PRICE = 30 gwei;
+    uint256 public constant MAX_KEEPER_OVERHEAD = 200_000;
     uint256 public constant MAX_OPS_BPS = 10_000;
     uint256 public constant MAX_CONTINUITY_SHARE_BPS = 10_000;
     uint256 internal constant MAX_COOLDOWN = 30 days;
@@ -1006,7 +1012,10 @@ contract CollectionGame is ICollectionGame, ReentrancyGuard, Governed {
 
     /// @notice Keeper pay: the gas-price cap, overhead, flat fee and pay delay. Payment never exceeds the allowance.
     function setKeeperParams(KeeperParams calldata k) external onlyOwner {
-        if (k.flatFee > 0.1 ether || k.payDelay > 1 hours) revert OutOfBounds();
+        if (
+            k.flatFee > 0.001 ether || k.payDelay > 1 hours || k.maxGasPrice > MAX_KEEPER_GAS_PRICE
+                || k.gasOverhead > MAX_KEEPER_OVERHEAD
+        ) revert OutOfBounds();
         _keeper = k;
         emit KeeperParamsSet(k);
     }
@@ -1045,7 +1054,7 @@ contract CollectionGame is ICollectionGame, ReentrancyGuard, Governed {
     }
 
     function _setPricing(uint256 m, uint256 o) internal {
-        if (m > MAX_MARKUP_BPS || o > MAX_OPS_BPS) revert OutOfBounds();
+        if (m < MIN_MARKUP_BPS || m > MAX_MARKUP_BPS || o > MAX_OPS_BPS) revert OutOfBounds();
         markupBps = m;
         opsBps = o;
         emit PricingSet(m, o);
