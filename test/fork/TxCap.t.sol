@@ -18,7 +18,7 @@ contract TxCapForkTest is ForkBase {
 
     function setUp() public {
         setUpFork();
-        cfg = _baycConfig(owner);
+        cfg = _testChecksConfig();
         uint256[] memory heavy = new uint256[](1);
         heavy[0] = 0.04 ether; // the heaviest prize per listing: a Pack of four 0.01 Shapes
         cfg.boardPattern = heavy;
@@ -33,7 +33,7 @@ contract TxCapForkTest is ForkBase {
     }
 
     function _notional(uint256 i) internal view returns (uint256) {
-        (, uint128 n,,,) = sys.poolOwner.cListings(sys.poolOwner.listedAt(i));
+        (, uint128 n,,,,) = sys.poolOwner.cListings(sys.poolOwner.listedAt(i));
         return n;
     }
 
@@ -42,8 +42,8 @@ contract TxCapForkTest is ForkBase {
         createPool();
         openMarket();
         accrueFees(6.05 ether);
-        riseBidTo(6 ether);
-        sellApeAt(nextApeId(), 6 ether);
+        riseBidTo(0.25 ether);
+        sellCheckAt(nextCheckId(), 0.25 ether);
         accrueFees(sys.game.capitalNeed() + 0.1 ether);
         uint256 maxGas;
         uint256 calls;
@@ -60,7 +60,7 @@ contract TxCapForkTest is ForkBase {
 
     /// The owner grows a board of the heaviest prize by 50 rows: the new rows list in calls that each fit the cap.
     function test_heaviestBoardGrowthFitsTheCap() public {
-        launchGame(6 ether);
+        launchGame(0.25 ether);
         accrueFees(30 ether);
         uint256 size = sys.game.boardSize();
         govern(address(sys.game), abi.encodeCall(CollectionGame.setBoardSize, (size + 50)));
@@ -80,7 +80,7 @@ contract TxCapForkTest is ForkBase {
 
     /// Retirement withdraws and unwinds every listed Pack (and the Apes) in calls that each fit the cap.
     function test_heaviestRetirementFitsTheCap() public {
-        launchGame(6 ether);
+        launchGame(0.25 ether);
         vm.prank(address(sys.migration)); // a migration's execution (or the sunset) retires the game
         sys.game.retire();
         uint256 maxGas;
@@ -103,10 +103,10 @@ contract TxCapForkTest is ForkBase {
     /// at most `LIST_BATCH_AFTER_PACKS` once it has minted Packs (the next call lists the rest); another reprices a
     /// full batch of Apes. Every call fits the cap with a 10% margin.
     function test_heaviestCombinedCallsFitTheCap() public {
-        launchGame(6 ether);
+        launchGame(0.25 ether);
         // Apes waiting in custody (the vault's donations need no bid)
         for (uint256 i; i < 12; ++i) {
-            uint256 id = nextApeId();
+            uint256 id = nextCheckId();
             address holder = IERC721Lite(cfg.collection).ownerOf(id);
             vm.startPrank(holder);
             IERC721Lite(cfg.collection).setApprovalForAll(address(sys.vault), true);
@@ -117,7 +117,7 @@ contract TxCapForkTest is ForkBase {
         // the gate's ceiling as the target, so a full batch of ten Apes fits the 50-row board in one call
         CollectionPoolOwner.ListingParams memory lp = sys.poolOwner.listingParams();
         lp.targetBps = 5_000;
-        govern(address(sys.poolOwner), abi.encodeCall(CollectionPoolOwner.setListingParams, (lp)));
+        councilCall(address(sys.poolOwner), abi.encodeCall(CollectionPoolOwner.setListingParams, (lp)));
         // a full batch of wins, settled at FWA and waiting to be booked and replaced
         for (uint256 i; i < 20; ++i) { // a 50-row board: below the Shape floor (25 in play) the gate would close
             pullAndSettle(alice, uint256(keccak256(abi.encode("cap", i))));
@@ -142,17 +142,20 @@ contract TxCapForkTest is ForkBase {
             if (used < 100_000) break;
             if (used > maxGas) maxGas = used;
         }
-        // gameplay credited to every Ape: the collection step reprices a full batch (measured here as the game's call
-        // into the pool owner, the part of a maintenance call that grows with the Apes)
-        uint256 credited = sys.poolOwner.creditedTurnover();
+        // the council raises the 80-Check price: the collection step reprices a full batch of Checks (measured here as
+        // the game's call into the pool owner, the part of a maintenance call that grows with the Checks)
+        uint256[8] memory sched = sys.poolOwner.schedule();
+        sched[0] = sched[0] * 2;
+        vm.prank(council);
+        sys.poolOwner.setSchedule(sched);
         window();
         uint256 before = _notional(0);
         vm.prank(address(sys.game));
         uint256 g = gasleft();
-        sys.poolOwner.processCollection(credited + 13 * 3 ether);
+        sys.poolOwner.processCollection(0);
         uint256 reprice = g - gasleft() + _sync();
         emit log_named_uint("reprice a batch of Apes (gas)", reprice);
-        assertLt(_notional(0), before, "the call repriced the Apes");
+        assertGt(_notional(0), before, "the call repriced the Checks");
         if (reprice > maxGas) maxGas = reprice;
         emit log_named_uint("largest call (gas)", maxGas);
         assertLt(maxGas, LIMIT, "every call within the cap with a 10% margin");
@@ -171,8 +174,8 @@ contract TxCapForkTest is ForkBase {
         openMarket();
         _ceiling();
         accrueFees(6.05 ether);
-        riseBidTo(6 ether);
-        sellApeAt(nextApeId(), 6 ether);
+        riseBidTo(0.25 ether);
+        sellCheckAt(nextCheckId(), 0.25 ether);
         accrueFees(sys.game.capitalNeed() + 0.1 ether);
         uint256 maxGas;
         for (uint256 i; i < 40 && sys.game.liveCount() < sys.game.boardSize(); ++i) {
@@ -186,10 +189,10 @@ contract TxCapForkTest is ForkBase {
 
     /// At the ceilings, one call books a batch of wins, relists the most Packs a call may and lists Apes from custody.
     function test_ceilingCombinedCallFitsTheCap() public {
-        launchGame(6 ether);
+        launchGame(0.25 ether);
         _ceiling();
         for (uint256 i; i < 12; ++i) {
-            uint256 id = nextApeId();
+            uint256 id = nextCheckId();
             address holder = IERC721Lite(cfg.collection).ownerOf(id);
             vm.startPrank(holder);
             IERC721Lite(cfg.collection).setApprovalForAll(address(sys.vault), true);
@@ -199,7 +202,7 @@ contract TxCapForkTest is ForkBase {
         accrueFees(30 ether);
         CollectionPoolOwner.ListingParams memory lp = sys.poolOwner.listingParams();
         lp.targetBps = 5_000;
-        govern(address(sys.poolOwner), abi.encodeCall(CollectionPoolOwner.setListingParams, (lp)));
+        councilCall(address(sys.poolOwner), abi.encodeCall(CollectionPoolOwner.setListingParams, (lp)));
         for (uint256 i; i < 20; ++i) {
             pullAndSettle(alice, uint256(keccak256(abi.encode("cap", i))));
         }
@@ -213,7 +216,7 @@ contract TxCapForkTest is ForkBase {
 
     /// At the ceilings, a call facing more waiting wins than it may book (a grown board) fits the cap.
     function test_ceilingBookingBacklogFitsTheCap() public {
-        launchGame(6 ether);
+        launchGame(0.25 ether);
         accrueFees(60 ether);
         _ceiling();
         for (uint256 k; k < 2; ++k) {
@@ -246,7 +249,7 @@ contract TxCapForkTest is ForkBase {
     /// @dev Final audit round 5 (F1): a board grown to 150 rows of the heaviest Packs, twelve Apes in custody and the
     ///      exposure target at its ceiling, ready for the heaviest calls.
     function _grownBoardWithApes() internal {
-        launchGame(6 ether);
+        launchGame(0.25 ether);
         accrueFees(80 ether);
         _ceiling();
         for (uint256 k; k < 2; ++k) {
@@ -257,7 +260,7 @@ contract TxCapForkTest is ForkBase {
             }
         }
         for (uint256 i; i < 12; ++i) {
-            uint256 id = nextApeId();
+            uint256 id = nextCheckId();
             address holder = IERC721Lite(cfg.collection).ownerOf(id);
             vm.startPrank(holder);
             IERC721Lite(cfg.collection).setApprovalForAll(address(sys.vault), true);
@@ -266,7 +269,7 @@ contract TxCapForkTest is ForkBase {
         }
         CollectionPoolOwner.ListingParams memory lp = sys.poolOwner.listingParams();
         lp.targetBps = 5_000;
-        govern(address(sys.poolOwner), abi.encodeCall(CollectionPoolOwner.setListingParams, (lp)));
+        councilCall(address(sys.poolOwner), abi.encodeCall(CollectionPoolOwner.setListingParams, (lp)));
     }
 
     /// Round 5's F1 case: ten requests already open and more new wins than a call books, with relists and Ape

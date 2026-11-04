@@ -23,7 +23,7 @@ contract FundingForkTest is ForkBase {
     IERC721Lite bayc;
 
     function setUp() public {
-        deployBayc();
+        deployChecksAt(6 ether);
         bayc = IERC721Lite(cfg.collection);
         createPool();
         openMarket();
@@ -70,7 +70,7 @@ contract FundingForkTest is ForkBase {
     }
 
     function test_nftContributionUsesConservativeReference() public {
-        uint256 id = nextApeId();
+        uint256 id = nextCheckId();
         address holder = bayc.ownerOf(id);
         vm.startPrank(holder);
         bayc.setApprovalForAll(address(sys.vault), true);
@@ -87,7 +87,7 @@ contract FundingForkTest is ForkBase {
         syncAll();
         assertTrue(sys.game.ready());
         sys.game.activate();
-        (, uint128 notional,,,) = sys.poolOwner.cListings(sys.poolOwner.listedAt(0));
+        (, uint128 notional,,,,) = sys.poolOwner.cListings(sys.poolOwner.listedAt(0));
         assertEq(notional, cfg.refPrice, "opens at its reference value");
         assertLe(sys.poolOwner.exposureBps(), 1_500);
         // no withdrawal path for the donor or anyone
@@ -97,7 +97,7 @@ contract FundingForkTest is ForkBase {
     }
 
     function test_strayNftRegisteredAsDonation() public {
-        uint256 id = nextApeId();
+        uint256 id = nextCheckId();
         address holder = bayc.ownerOf(id);
         vm.prank(holder);
         (bool ok,) = cfg.collection.call(
@@ -112,7 +112,7 @@ contract FundingForkTest is ForkBase {
     }
 
     function test_safeTransferOfCollectionNftIsRefused() public {
-        uint256 id = nextApeId();
+        uint256 id = nextCheckId();
         address holder = bayc.ownerOf(id);
         vm.prank(holder);
         (bool ok,) = cfg.collection.call(
@@ -137,7 +137,7 @@ contract FundingForkTest is ForkBase {
         uint256 bid = sys.vault.liveBid();
         assertGt(bid, 6 ether, "metered above the threshold");
         assertLe(bid, 6 ether + cfg.bid.maxSweepWei, "one step");
-        uint256 id = nextApeId();
+        uint256 id = nextCheckId();
         address holder = bayc.ownerOf(id);
         uint256 before = holder.balance;
         vm.startPrank(holder);
@@ -159,7 +159,7 @@ contract FundingForkTest is ForkBase {
         assertEq(sys.vault.acquisitionBudget(), 0);
         assertEq(sys.vault.liveBid(), 0);
         // only the NFT's owner can sell it
-        uint256 other = nextApeId();
+        uint256 other = nextCheckId();
         vm.prank(holder);
         vm.expectRevert();
         sys.vault.sellToProtocol(other, 1);
@@ -171,7 +171,7 @@ contract FundingForkTest is ForkBase {
         vm.expectRevert(CollectionGame.NotReady.selector);
         sys.game.activate();
         riseBidTo(6 ether);
-        sellApe(nextApeId());
+        sellCheck(nextCheckId());
         // the vault now funds the whole requirement at once; one sync lists a batch (`maxPerCall`, 8) of the rows
         vm.prank(keeper);
         sys.game.sync();
@@ -189,7 +189,7 @@ contract FundingForkTest is ForkBase {
     function test_boardNotFundedPiecemeal() public {
         accrueFees(8 ether);
         riseBidTo(6 ether);
-        sellApeAt(nextApeId(), 6 ether);
+        sellCheckAt(nextCheckId(), 6 ether);
         // less than the full requirement remains: the vault sends nothing and no Shape is minted
         uint256 need = sys.game.capitalNeed();
         assertGt(need, sys.vault.generalBalance());
@@ -226,7 +226,7 @@ contract FundingForkTest is ForkBase {
         SeaportAdapter adapter = sys.adapter; // the vault's one adapter, fixed at deployment
         assertEq(sys.vault.adapter(), address(adapter));
         accrueFees(20 ether);
-        uint256 id = nextApeId();
+        uint256 id = nextCheckId();
         address seller = bayc.ownerOf(id);
         address market = makeAddr("marketplaceFee");
         // the seller lists on Seaport for 4 ETH (3.9 to the seller, 0.1 marketplace fee), validated on chain
@@ -261,7 +261,7 @@ contract FundingForkTest is ForkBase {
     /// there) is booked as what it is, and the NFT is booked at the order's full price.
     function test_otherInflowDuringAFillDoesNotLowerThePrice() public {
         accrueFees(20 ether);
-        uint256 id = nextApeId();
+        uint256 id = nextCheckId();
         PaysVaultOnReceive market = new PaysVaultOnReceive(sys.vault);
         vm.deal(address(market), 0.05 ether);
         SeaportTypes.AdvancedOrder memory ao = _seaportListing(id, address(market));
@@ -282,7 +282,7 @@ contract FundingForkTest is ForkBase {
     /// back to the vault, directly or through the pool owner's flush, would be booked as NFT cost.
     function test_adapterRejectsTipsAndProtocolRecipients() public {
         accrueFees(20 ether);
-        uint256 id = nextApeId();
+        uint256 id = nextCheckId();
         sys.vault.sweep();
         // a tip the caller appends to the validated order, paid to itself
         SeaportTypes.AdvancedOrder memory ao = _seaportListing(id, makeAddr("marketplaceFee"));
@@ -330,7 +330,7 @@ contract FundingForkTest is ForkBase {
     /// price the vault books; it stays in the adapter (the sender's loss), and the vault's books stay exact.
     function test_adapterPrefundCannotBlockOrRepriceAFill() public {
         accrueFees(20 ether);
-        uint256 id = nextApeId();
+        uint256 id = nextCheckId();
         address seller = bayc.ownerOf(id);
         SeaportTypes.AdvancedOrder memory ao = _seaportListing(id, makeAddr("marketplaceFee"));
         address griefer = makeAddr("griefer");
@@ -362,7 +362,7 @@ contract FundingForkTest is ForkBase {
         vm.etch(address(sys.adapter), address(new LyingAdapter()).code);
         sys.vault.sweep();
         uint256 bal = address(sys.vault).balance;
-        uint256 id = nextApeId();
+        uint256 id = nextCheckId();
         vm.expectRevert(FundingVault.NotDelivered.selector);
         sys.vault.fillOrder(id, 5 ether, "");
         assertEq(address(sys.vault).balance, bal);
@@ -374,7 +374,7 @@ contract FundingForkTest is ForkBase {
         uint256 keeperBefore = keeper.balance;
         accrueFees(6 ether);
         riseBidTo(6 ether);
-        sellApe(nextApeId());
+        sellCheck(nextCheckId());
         accrueFees(sys.game.capitalNeed() + listingPayRoom());
         vm.txGasPrice(1 gwei);
         syncAll();

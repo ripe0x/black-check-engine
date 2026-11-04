@@ -9,7 +9,7 @@ import {CollectionBurner} from "../../src/treasury/CollectionBurner.sol";
 ///         changes one value, on chain or in the config it is checked against, and the postflight names it.
 contract PostflightForkTest is ForkBase {
     function setUp() public {
-        deployBayc();
+        deployChecks();
     }
 
     function _expect(string memory what, Config memory c) internal {
@@ -86,7 +86,7 @@ contract PostflightForkTest is ForkBase {
     /// No system contract may be named as a draw's purchaser (G3: a prize sent to one is stranded), and the
     /// postflight confirms each is recorded; a player still can, within FWA's 100,000-gas stipend for the check.
     function test_systemContractsCannotPurchase() public {
-        launchGame(6 ether);
+        launchGame(0.25 ether);
         address[10] memory system = [
             address(sys.burner), address(sys.hook), address(sys.liquidity), address(sys.token), address(sys.admin),
             address(sys.sunset), address(sys.adapter), address(sys.lens), address(sys.drawRouter), sys.packRenderer

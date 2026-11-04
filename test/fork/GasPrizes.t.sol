@@ -12,8 +12,8 @@ contract GasPrizesForkTest is ForkBase {
     string internal j;
 
     function setUp() public {
-        deployBayc();
-        launchGame(6 ether);
+        deployChecks();
+        launchGame(0.25 ether);
     }
 
     function _replaceGas(uint256 backing, uint256 nonce) internal returns (uint256 used) {

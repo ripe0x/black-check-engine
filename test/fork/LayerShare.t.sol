@@ -37,7 +37,7 @@ contract LayerShareForkTest is ForkBase {
     LayerTap tap;
 
     function setUp() public {
-        deployBayc();
+        deployChecks();
         openMarket();
         tap = LayerTap(payable(sys.layerTap));
     }

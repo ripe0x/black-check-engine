@@ -20,7 +20,7 @@ contract CoinMetadataForkTest is ForkBase {
     event ContractURIUpdated();
 
     function setUp() public {
-        deployBayc();
+        deployChecks();
     }
 
     function _json(string memory description, string memory image) internal view returns (string memory) {

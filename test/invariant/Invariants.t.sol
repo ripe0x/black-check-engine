@@ -18,8 +18,8 @@ contract InvariantsForkTest is ForkBase {
     uint256 safe0;
 
     function setUp() public {
-        deployBayc();
-        launchGame(6 ether);
+        deployChecks();
+        launchGame(0.25 ether);
         pastOpeningCurve();
         handler = new Handler(sys, pool, swapper, cfg.collection, cfg.poolManager);
         supply0 = sys.token.totalSupply();
@@ -69,7 +69,7 @@ contract InvariantsForkTest is ForkBase {
         }
         for (uint256 i; i < sys.poolOwner.listedCount(); ++i) {
             uint256 id = sys.poolOwner.listedAt(i);
-            (uint256 tokenId,,,,) = sys.poolOwner.cListings(id);
+            (uint256 tokenId,,,,,) = sys.poolOwner.cListings(id);
             address owner_ = IERC721O(cfg.collection).ownerOf(tokenId);
             if (owner_ == address(pool)) continue;
             // won and delivered by FWA, not yet recorded by a sync: it must be with that listing's purchaser

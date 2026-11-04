@@ -5,12 +5,12 @@ import {Script, console2} from "forge-std/Script.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {LaunchConfig} from "./LaunchConfig.sol";
 
-/// @notice Deploys Ape Draw (coin, game, MigrationAuthority), wires it, runs the postflight and writes
+/// @notice Deploys the Checks game (coin, game, desk, MigrationAuthority), wires it, runs the postflight and writes
 ///         `deployments/<DEPLOY_ENV>.json`.
 ///         Never run against mainnet from an automated session; use `script/deploy.sh <env>` (dry run by default).
 /// @dev Environment (values only, see script/env/*.env):
-///      OWNER                   the administrator (Admin.owner: two-step transferable, renounceable)
-///      COLLECTION              "bayc" (the launch config)
+///      OWNER                   the operator (Admin.owner: routine bounded settings; two-step transferable, renounceable)
+///      COUNCIL                 the council TimelockController (Admin.council: value and custody powers, D012)
 ///      COIN_NAME, COIN_SYMBOL  coin identity (placeholders in LaunchConfig if unset)
 ///      REF_PRICE_WEI           the reference price: the live floor on the day; the live bid's first activation
 ///                              threshold is 100% of it (OWNER; D64)
@@ -36,13 +36,7 @@ contract Deploy is Script, LaunchConfig {
     }
 
     function _envConfig() internal view virtual returns (Config memory c) {
-        address owner = vm.envAddress("OWNER");
-        string memory which = vm.envOr("COLLECTION", string("bayc"));
-        if (keccak256(bytes(which)) == keccak256("bayc")) {
-            c = _baycConfig(owner);
-        } else {
-            c = _collectionConfig(owner, vm.parseAddress(which), "Collection Game Coin", "CGC");
-        }
+        c = _checksConfig(vm.envAddress("OWNER"), vm.envAddress("COUNCIL"));
         c.name = vm.envOr("COIN_NAME", c.name);
         c.symbol = vm.envOr("COIN_SYMBOL", c.symbol);
         c.coinImage = vm.envOr("COIN_IMAGE", c.coinImage);
@@ -72,6 +66,8 @@ contract Deploy is Script, LaunchConfig {
         vm.serializeAddress(k, "vault", address(s.vault));
         vm.serializeAddress(k, "hook", address(s.hook));
         vm.serializeAddress(k, "poolOwner", address(s.poolOwner));
+        vm.serializeAddress(k, "desk", address(s.desk));
+        vm.serializeAddress(k, "council", c.council);
         vm.serializeAddress(k, "sunset", address(s.sunset));
         vm.serializeAddress(k, "adapter", address(s.adapter));
         vm.serializeAddress(k, "lens", address(s.lens));

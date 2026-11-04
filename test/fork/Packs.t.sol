@@ -32,8 +32,8 @@ contract PacksForkTest is ForkBase {
     address bob = makeAddr("cg.player.bob");
 
     function setUp() public {
-        deployBayc();
-        launchGame(6 ether);
+        deployChecks();
+        launchGame(0.25 ether);
     }
 
     function _win(address who, uint256 backing) internal returns (uint256 r, uint256 listingId, uint256 tokenId) {

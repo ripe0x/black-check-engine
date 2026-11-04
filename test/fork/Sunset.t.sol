@@ -19,7 +19,7 @@ contract SunsetForkTest is ForkBase {
     function setUp() public {
         // a small opening allowance, so the game holds more cash than keepers may be paid (the cap under test)
         setUpFork();
-        cfg = _baycConfig(owner);
+        cfg = _testChecksConfigAt(6 ether);
         cfg.openingAllowance = 0.1 ether;
         _deploy();
         launchGame(6 ether);
@@ -98,8 +98,10 @@ contract SunsetForkTest is ForkBase {
     }
 
     function _sunsetApe() internal view returns (uint256) {
-        for (uint256 id = 1; id < 200; ++id) {
-            if (IERC721Lite(cfg.collection).ownerOf(id) == address(sys.sunset)) return id;
+        for (uint256 id = 1; id < 20_000; ++id) {
+            try IERC721Lite(cfg.collection).ownerOf(id) returns (address o) {
+                if (o == address(sys.sunset)) return id;
+            } catch {} // a Check burned in composition
         }
         revert("no Ape at the sunset");
     }

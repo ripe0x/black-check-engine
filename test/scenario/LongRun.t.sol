@@ -12,8 +12,8 @@ contract LongRunScenarioTest is ForkBase {
     address bob = makeAddr("cg.player.bob");
 
     function setUp() public {
-        deployBayc();
-        launchGame(6 ether);
+        deployChecks();
+        launchGame(0.25 ether);
     }
 
     /// Zero subsequent trading: the game runs on its own capital and margin; distributions flow; when the only Ape is
@@ -63,14 +63,14 @@ contract LongRunScenarioTest is ForkBase {
         assertBooks();
         // funding returns: the vault's surplus share plus a contribution buy the next Ape at the bid; purchases reopen
         uint256 budget = sys.vault.acquisitionBudget();
-        if (budget < 6 ether) {
+        if (budget < 0.25 ether) {
             address donor = makeAddr("cg.donor");
-            vm.deal(donor, 6 ether - budget);
+            vm.deal(donor, 0.25 ether - budget);
             vm.prank(donor);
-            sys.vault.contribute{value: 6 ether - budget}();
+            sys.vault.contribute{value: 0.25 ether - budget}();
         }
-        riseBidTo(6 ether); // the bid climbs back from its restart price as it is recorded
-        sellApe(nextApeId());
+        riseBidTo(0.25 ether); // the bid climbs back from its restart price as it is recorded
+        sellCheck(nextCheckId());
         assertGt(sys.vault.surplusIn(), 0, "game surplus paid for part of it");
         vm.prank(keeper);
         sys.game.sync();

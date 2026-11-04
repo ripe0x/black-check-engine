@@ -37,7 +37,7 @@ contract MarketForkTest is ForkBase {
     address trader = makeAddr("trader");
 
     function setUp() public {
-        deployBayc();
+        deployChecks();
     }
 
     function _feeOf(uint256 eth) internal returns (uint256 fee) {

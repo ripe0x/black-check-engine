@@ -59,12 +59,12 @@ abstract contract ThroughputBase is ForkBase {
 
     function _setup(uint256 boardSize, uint32 cooldown) internal {
         setUpFork();
-        cfg = _baycConfig(owner);
+        cfg = _testChecksConfig();
         cfg.initialBoardSize = boardSize;
         cfg.maxInFlight = inFlight;
         _configureBoard();
         _deploy();
-        launchGame(6 ether);
+        launchGame(0.25 ether);
         if (cooldown != 0) {
             (bool ok, bytes memory o) = cfg.fwaFactory.staticcall(abi.encodeWithSignature("owner()"));
             require(ok);

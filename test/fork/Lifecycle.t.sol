@@ -9,18 +9,18 @@ contract LifecycleForkTest is ForkBase {
     address player = makeAddr("player");
 
     function setUp() public {
-        deployBayc();
+        deployChecks();
     }
 
     function test_launchAndPlay() public {
-        launchGame(6 ether);
+        launchGame(0.25 ether);
         assertEq(pool.owner(), address(sys.poolOwner), "pool owner");
         assertEq(pool.purchaseOperator(), address(sys.poolOwner), "operator");
         assertTrue(pool.localPurchasesEnabled(), "open");
         assertEq(sys.game.liveCount(), sys.game.boardSize(), "board");
         assertEq(sys.poolOwner.listedCount(), 1, "one ape");
-        (, uint128 notional,,,) = sys.poolOwner.cListings(sys.poolOwner.listedAt(0));
-        assertEq(notional, 6 ether, "the Ape opens at its price");
+        (, uint128 notional,,,,) = sys.poolOwner.cListings(sys.poolOwner.listedAt(0));
+        assertEq(notional, 0.25 ether, "the Ape opens at its price");
         emit log_named_uint("exposure bps", sys.poolOwner.exposureBps());
         (uint256 fee,,) = pool.quoteAcquisitionPrice(1);
         emit log_named_uint("ticket wei", fee);

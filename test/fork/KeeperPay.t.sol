@@ -13,8 +13,8 @@ contract KeeperPayForkTest is ForkBase {
     uint256 constant FLAT = 0.0002 ether; // the launch flat fee (D79)
 
     function setUp() public virtual {
-        deployBayc();
-        launchGame(6 ether);
+        deployChecks();
+        launchGame(0.25 ether);
     }
 
     function _syncPaid(uint256 basefee, uint256 priority) internal returns (uint256 tipPaid, uint256 gasUsed) {
@@ -214,10 +214,10 @@ contract KeeperAllowanceForkTest is ForkBase {
 
     function setUp() public {
         setUpFork();
-        cfg = _baycConfig(owner);
+        cfg = _testChecksConfig();
         cfg.openingAllowance = 0;
         _deploy();
-        launchGame(6 ether);
+        launchGame(0.25 ether);
     }
 
     function test_payNeverExceedsTheAllowance() public {

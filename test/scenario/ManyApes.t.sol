@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {CollectionPoolOwner} from "../../src/core/CollectionPoolOwner.sol";
 import {ForkBase, IERC721Lite} from "../fork/ForkBase.sol";
 import {IFWAPool} from "../../src/interfaces/IFWA.sol";
 import {IGameSync} from "../../src/periphery/DrawRouter.sol";
@@ -22,8 +23,8 @@ contract ManyApesTest is ForkBase {
     uint256 constant TX_LIMIT = 15_099_494; // 16,777,216 x 90%
 
     function setUp() public {
-        deployBayc();
-        launchGame(6 ether);
+        deployChecks();
+        launchGame(0.25 ether);
     }
 
     function test_oneApe() public {
@@ -60,7 +61,7 @@ contract ManyApesTest is ForkBase {
 
     function _donate(uint256 n) internal {
         for (uint256 i; i < n; ++i) {
-            uint256 tokenId = nextApeId();
+            uint256 tokenId = nextCheckId();
             address holder = IERC721Lite(cfg.collection).ownerOf(tokenId);
             vm.startPrank(holder);
             IERC721Lite(cfg.collection).setApprovalForAll(address(sys.vault), true);
@@ -157,13 +158,19 @@ contract ManyApesTest is ForkBase {
         (x.feeFresh,,) = pool.quoteAcquisitionPrice(1);
     }
 
-    /// @dev 2. Gameplay credited to every Ape until each reaches its minimum (the 1 ETH floor, D82); the board grows with it.
-    ///      Credit arrives in steps, each followed by keeper maintenance, as gameplay would bring it.
+    /// @dev 2. Every Check decays to its floor (85% of its schedule, D005) and the board grows with it. The council
+    ///      sets the decay to 100% a draw for the study, so one real draw that every Check survives takes all of them
+    ///      to the floor at once: the heaviest repricing the Checks can need.
     function _decayAll(uint256 k, Result memory x) internal {
+        CollectionPoolOwner.ListingParams memory lp = sys.poolOwner.listingParams();
+        lp.decayBps = 10_000;
+        vm.prank(council);
+        sys.poolOwner.setListingParams(lp);
+        uint256 r = pull(alice);
+        vm.roll(block.number + 3);
+        deliverWord(r, wordFor(0));
+        pool.processAcquisitions(10);
         for (uint256 round; round < 60 && !_allAtMinimum(k); ++round) {
-            uint256 credited = sys.poolOwner.creditedTurnover();
-            vm.prank(address(sys.game));
-            sys.poolOwner.processCollection(credited + k * 2 ether); // 2 ETH more for every Ape
             if (round == 0) {
                 window();
                 _siteDraw(x); // repricing and board growth pending
@@ -173,8 +180,8 @@ contract ManyApesTest is ForkBase {
             _max(x, gas);
         }
         for (uint256 i; i < k; ++i) {
-            (, uint128 n,,,) = sys.poolOwner.cListings(sys.poolOwner.listedAt(i));
-            assertEq(n, cfg.listing.minNotionalWei, "at its minimum");
+            (, uint128 n,,,,) = sys.poolOwner.cListings(sys.poolOwner.listedAt(i));
+            assertEq(n, _floor(), "at its floor");
         }
         assertEq(sys.game.owedCount(), 0);
         assertEq(sys.poolOwner.rowsShort(), 0);
@@ -219,10 +226,14 @@ contract ManyApesTest is ForkBase {
 
     function _allAtMinimum(uint256 k) internal view returns (bool) {
         for (uint256 i; i < k; ++i) {
-            (, uint128 n,,,) = sys.poolOwner.cListings(sys.poolOwner.listedAt(i));
-            if (n != cfg.listing.minNotionalWei) return false;
+            (, uint128 n,,,,) = sys.poolOwner.cListings(sys.poolOwner.listedAt(i));
+            if (n != _floor()) return false;
         }
         return true;
+    }
+
+    function _floor() internal view returns (uint256) {
+        return sys.poolOwner.scheduleOf(0) * cfg.listing.floorBps / 10_000;
     }
 
     function _max(Result memory x, uint256 gas) internal pure {

@@ -17,8 +17,8 @@ contract OutageForkTest is ForkBase {
     error PurchaseNotAllowed();
 
     function setUp() public {
-        deployBayc();
-        launchGame(6 ether);
+        deployChecks();
+        launchGame(0.25 ether);
     }
 
     function _batch(address who, uint256 count) internal returns (uint256[] memory ids) {

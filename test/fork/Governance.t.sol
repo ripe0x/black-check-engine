@@ -19,8 +19,8 @@ contract GovernanceForkTest is ForkBase {
     address stranger = makeAddr("cg.stranger");
 
     function setUp() public {
-        deployBayc();
-        launchGame(6 ether);
+        deployChecks();
+        launchGame(0.25 ether);
     }
 
     function test_ownerChangesPricingAtOnce() public {
@@ -132,7 +132,7 @@ contract GovernanceForkTest is ForkBase {
         sys.hook.setFees(1_000, 0);
         CollectionPoolOwner.ListingParams memory lp = sys.poolOwner.listingParams();
         lp.targetBps = 5_001; // above the purchase gate's 50% ceiling
-        vm.expectRevert(Governed.OutOfBounds.selector);
+        vm.expectRevert(Governed.NotCouncil.selector); // the listing rule is the council's (D012)
         sys.poolOwner.setListingParams(lp);
         vm.expectRevert(Governed.OutOfBounds.selector);
         sys.poolOwner.setMaxInFlight(51);
@@ -156,7 +156,7 @@ contract GovernanceForkTest is ForkBase {
         sys.game.retire();
         vm.expectRevert(Governed.NotOwner.selector);
         sys.game.setBoardSize(rows + 1);
-        vm.expectRevert(Governed.NotOwner.selector);
+        vm.expectRevert(Governed.NotCouncil.selector);
         sys.poolOwner.setListingParams(lp);
         vm.expectRevert(CollectionHook.NotMigrator.selector);
         sys.hook.setFeeRecipient(stranger);
@@ -179,7 +179,7 @@ contract GovernanceForkTest is ForkBase {
         vm.expectRevert(Governed.NotDeployer.selector);
         sys.vault.wire(address(sys.game), address(sys.poolOwner), address(0));
         vm.expectRevert(Governed.NotDeployer.selector);
-        sys.poolOwner.wire(address(this), new address[](0));
+        sys.poolOwner.wire(address(this), address(this), new address[](0));
         vm.expectRevert(Governed.NotDeployer.selector);
         sys.burner.wire(address(1), address(sys.game), address(sys.poolOwner));
         vm.expectRevert(Governed.NotDeployer.selector);
@@ -303,6 +303,6 @@ contract GovernanceForkTest is ForkBase {
 
     function test_adminRejectsZeroOwnerAtDeploy() public {
         vm.expectRevert(Admin.ZeroAddress.selector);
-        new Admin(address(0));
+        new Admin(address(0), address(1));
     }
 }

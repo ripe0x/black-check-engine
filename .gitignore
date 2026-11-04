@@ -20,3 +20,5 @@ deployments/anvil-mayc.json
 .local-*.pid
 coverage/
 .DS_Store
+out-fast/
+cache-fast/

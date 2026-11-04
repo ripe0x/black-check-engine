@@ -18,7 +18,7 @@ contract GasForkTest is ForkBase {
 
     function _measureDeploy() internal returns (uint256 used) {
         setUpFork();
-        cfg = _baycConfig(owner);
+        cfg = _testChecksConfig();
         cfg.create2Deployer = address(this);
         cfg.create2Direct = true;
         vm.deal(address(this), 10 ether);
@@ -84,8 +84,8 @@ contract GasForkTest is ForkBase {
         _g("market_launch", g - gasleft());
 
         accrueFees(6.05 ether); // the Ape and the sweep rewards on the way
-        uint256 bid = riseBidTo(6 ether);
-        uint256 id = nextApeId();
+        uint256 bid = riseBidTo(0.25 ether);
+        uint256 id = nextCheckId();
         address holder = IERC721Lite(cfg.collection).ownerOf(id);
         vm.prank(holder);
         IERC721Lite(cfg.collection).setApprovalForAll(address(sys.vault), true);

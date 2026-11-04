@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 interface IAdmin {
     function owner() external view returns (address);
+    function council() external view returns (address);
     function isProtected(address token) external view returns (bool);
 }
 
@@ -11,8 +12,8 @@ interface IERC721Sweep {
 }
 
 /// @title Governed
-/// @notice Administration for every Ape Draw contract: the owner recorded in the shared `Admin` contract (two-step
-///         transfer, renounce), plus the deployer's one-shot wiring window.
+/// @notice Administration for every governed contract: the owner (operator) and the council timelock recorded in the
+///         shared `Admin` contract (D012), plus the deployer's one-shot wiring window.
 /// @dev Provenance: generalises `src/Governed.sol` of ripe0x/draw-shapes PR #9 (commit 0020bea, MIT), which had a
 ///      timelock and the same one-shot `wire` window. Roles and timelocks are collapsed into one owner.
 abstract contract Governed {
@@ -20,6 +21,7 @@ abstract contract Governed {
     address public deployer;
 
     error NotOwner();
+    error NotCouncil();
     error NotDeployer();
     error ZeroAddress();
     error OutOfBounds();
@@ -35,6 +37,12 @@ abstract contract Governed {
 
     modifier onlyOwner() {
         _checkOwner();
+        _;
+    }
+
+    /// @dev Powers that can change where value goes or what custody is worth (D012): the council timelock only.
+    modifier onlyCouncil() {
+        if (msg.sender != admin.council()) revert NotCouncil();
         _;
     }
 

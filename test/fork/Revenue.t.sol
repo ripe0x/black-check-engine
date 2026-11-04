@@ -12,7 +12,7 @@ contract RevenueForkTest is ForkBase {
     address trader = makeAddr("cg.trader");
 
     function setUp() public {
-        deployBayc();
+        deployChecksAt(6 ether);
         launchGame(6 ether);
         pastOpeningCurve();
         buyCoin(trader, 5 ether); // some market depth beyond the opening
@@ -113,6 +113,14 @@ contract RevenueForkTest is ForkBase {
         vm.expectRevert(CollectionBurner.TooSoon.selector);
         sys.burner.process(0);
         vm.warp(block.timestamp + 1 hours);
+        vm.roll(block.number + 1); // a new block: the burner compares with the block-open price
+        // the slice may have emptied the bucket on this draw sequence: keep something to spend, so the next call reaches
+        // the output check (ETH sent to the burner by anyone is ongoing)
+        if (sys.burner.ongoingBalance() == 0 && sys.burner.milestoneBalance() == 0) {
+            vm.deal(address(this), address(this).balance + 0.1 ether);
+            (bool ok,) = address(sys.burner).call{value: 0.1 ether}("");
+            assertTrue(ok);
+        }
         vm.prank(keeper);
         vm.expectRevert(CollectionBurner.InsufficientOutput.selector);
         sys.burner.process(type(uint256).max);
@@ -162,7 +170,7 @@ contract RevenueForkTest is ForkBase {
         // a second Ape so that winning the first leaves one in play
         accrueFees(30 ether);
         riseBidTo(6 ether);
-        sellApe(nextApeId());
+        sellCheck(nextCheckId());
         syncAll();
         uint256 first = _winAny();
         vm.prank(keeper);

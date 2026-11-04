@@ -20,8 +20,8 @@ contract GameForkTest is ForkBase {
     address bob = makeAddr("cg.player.bob");
 
     function setUp() public {
-        deployBayc();
-        launchGame(6 ether);
+        deployChecks();
+        launchGame(0.25 ether);
     }
 
     /// The opening board (D45): 48 x 0.01 Shape, 32 x 0.02 Pack, 7 x 0.03 Pack, 1 x 0.04 Pack, 7 x 0.05 Shape,

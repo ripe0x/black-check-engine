@@ -61,14 +61,14 @@ contract AcquisitionIdentitySwapForkTest is FundingForkTest {
     function _activateWithHeldApe() internal returns (uint256 heldId) {
         accrueFees(20 ether);
         riseBidTo(6 ether);
-        sellApeAt(nextApeId(), 6 ether);
+        sellCheckAt(nextCheckId(), 6 ether);
         accrueFees(sys.game.capitalNeed() + listingPayRoom());
         syncAll();
         assertTrue(sys.game.ready(), "opening board funded");
         sys.game.activate();
 
         // Keep a second registered Ape in custody while the active game is allowed to buy another one.
-        heldId = nextApeId();
+        heldId = nextCheckId();
         address heldDonor = bayc.ownerOf(heldId);
         vm.startPrank(heldDonor);
         bayc.setApprovalForAll(address(sys.vault), true);
@@ -90,8 +90,8 @@ contract AcquisitionIdentitySwapForkTest is FundingForkTest {
         uint256 heldBefore = sys.poolOwner.heldCount();
         uint256 balanceBefore = bayc.balanceOf(address(sys.poolOwner));
 
-        uint256 offeredId = nextApeId();
-        uint256 paddingId = nextApeId();
+        uint256 offeredId = nextCheckId();
+        uint256 paddingId = nextCheckId();
         InventorySwapRecipient recipient =
             new InventorySwapRecipient(cfg.collection, address(sys.poolOwner), address(sys.vault), heldId, paddingId);
         _giveToRecipient(paddingId, recipient);
@@ -141,8 +141,8 @@ contract AcquisitionIdentitySwapForkTest is FundingForkTest {
         uint256 heldId = _activateWithHeldApe();
         uint256 heldBefore = sys.poolOwner.heldCount();
         uint256 balanceBefore = bayc.balanceOf(address(sys.poolOwner));
-        uint256 offeredId = nextApeId();
-        uint256 paddingId = nextApeId();
+        uint256 offeredId = nextCheckId();
+        uint256 paddingId = nextCheckId();
         InventorySwapRecipient recipient =
             new InventorySwapRecipient(cfg.collection, address(sys.poolOwner), address(sys.vault), heldId, paddingId);
         _giveToRecipient(offeredId, recipient);
@@ -169,8 +169,8 @@ contract AcquisitionIdentitySwapForkTest is FundingForkTest {
 
     function test_oneWeiSaleThenSameTransactionDrawCannotTargetTheCheapApe() public {
         uint256 heldId = _activateWithHeldApe();
-        uint256 offeredId = nextApeId();
-        uint256 paddingId = nextApeId();
+        uint256 offeredId = nextCheckId();
+        uint256 paddingId = nextCheckId();
         InventorySwapRecipient recipient =
             new InventorySwapRecipient(cfg.collection, address(sys.poolOwner), address(sys.vault), heldId, paddingId);
         _giveToRecipient(offeredId, recipient);
@@ -187,7 +187,7 @@ contract AcquisitionIdentitySwapForkTest is FundingForkTest {
             uint256 cheapListing;
             for (uint256 i; i < sys.poolOwner.listedCount(); ++i) {
                 uint256 id = sys.poolOwner.listedAt(i);
-                (uint256 tokenId,,,,) = sys.poolOwner.cListings(id);
+                (uint256 tokenId,,,,,) = sys.poolOwner.cListings(id);
                 if (tokenId == offeredId) cheapListing = id;
                 assertTrue(tokenId != paddingId, "unregistered padding was listed");
             }
@@ -196,7 +196,7 @@ contract AcquisitionIdentitySwapForkTest is FundingForkTest {
             assertEq(referenceCost, sys.poolOwner.MIN_REF_COST(), "cheap Ape reference was not floored");
             assertEq(cashCost, 1, "cheap Ape cash cost changed");
             (,,,,, uint256 price,,) = pool.listings(cheapListing);
-            assertEq(price, sys.poolOwner.listingParams().minNotionalWei, "FWA lists at the absolute floor (D82)");
+            assertEq(price, sys.poolOwner.scheduleOf(0), "a Check lists at its tier's schedule price, whatever it cost (D003)");
         }
         assertEq(bayc.ownerOf(heldId), address(pool), "older Ape left the protocol draw");
 

@@ -59,7 +59,7 @@ contract Handler is Test {
         // a listed collection NFT's notional (its odds) never gets worse
         for (uint256 i; i < s.poolOwner.listedCount(); ++i) {
             uint256 id = s.poolOwner.listedAt(i);
-            (, uint128 n,,,) = s.poolOwner.cListings(id);
+            (, uint128 n,,,,) = s.poolOwner.cListings(id);
             uint256 last = _lastNotional[id];
             if (last != 0 && n > last) ++notionalIncreases;
             _lastNotional[id] = n;

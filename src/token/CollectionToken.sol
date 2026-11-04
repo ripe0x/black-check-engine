@@ -312,4 +312,11 @@ contract CollectionToken is ERC20, IVenuePolicy {
     function burn(uint256 amount) external {
         _burn(msg.sender, amount);
     }
+
+    /// @notice Burns `amount` of `from`'s tokens against the caller's allowance (the Checks desk burns what a player
+    ///         pays for a composition choice or a coin buyout; a burn passes the transfer restriction).
+    function burnFrom(address from, uint256 amount) external {
+        _spendAllowance(from, msg.sender, amount);
+        _burn(from, amount);
+    }
 }

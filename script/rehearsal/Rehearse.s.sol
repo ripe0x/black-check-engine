@@ -73,7 +73,7 @@ contract Rehearse is Script {
     }
 
     /// @notice A BAYC holder accepts the live bid for `tokenId`, naming the whole bid as its price.
-    function sellApe(uint256 tokenId) external {
+    function sellCheck(uint256 tokenId) external {
         address collection = _dep("collection");
         address holder = IERC721R(collection).ownerOf(tokenId);
         uint256 bid = IVaultR(_dep("vault")).liveBid();

@@ -15,7 +15,7 @@ contract SizesTest is Test {
     }
 
     function test_everyContractWithinEip170() public view {
-        string[15] memory names = [
+        string[16] memory names = [
             "CollectionGame.sol:CollectionGame",
             "CollectionPoolOwner.sol:CollectionPoolOwner",
             "FundingVault.sol:FundingVault",
@@ -29,8 +29,9 @@ contract SizesTest is Test {
             "Sunset.sol:Sunset",
             "DrawRouter.sol:DrawRouter",
             "SeaportAdapter.sol:SeaportAdapter",
-            "out/ShapePacks.sol/ShapePacks.json",
-            "out/ShapePackRenderer.sol/ShapePackRenderer.json"
+            "ShapePacks.sol:ShapePacks",
+            "ShapePackRenderer.sol:ShapePackRenderer",
+            "ChecksDesk.sol:ChecksDesk"
         ];
         for (uint256 i; i < names.length; ++i) {
             assertLe(vm.getDeployedCode(names[i]).length, EIP170, names[i]);

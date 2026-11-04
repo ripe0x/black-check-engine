@@ -16,6 +16,44 @@ interface IERC721Owner {
     function transferFrom(address from, address to, uint256 tokenId) external;
 }
 
+/// @dev Checks Originals as the vault uses them: the tier of a token, and migrating Editions into Originals (the
+///      Original keeps the Edition's id; Checks burns the Edition, so it must be approved on Editions).
+interface IChecksVault {
+    function mint(uint256[] calldata tokenIds, address recipient) external;
+}
+
+interface IChecksTier {
+    function getCheck(uint256 tokenId) external view returns (CheckTier memory);
+
+    struct StoredTier {
+        uint16[6] composites;
+        uint8[5] colorBands;
+        uint8[5] gradients;
+        uint8 divisorIndex;
+        uint32 epoch;
+        uint16 seed;
+        uint24 day;
+    }
+
+    struct CheckTier {
+        StoredTier stored;
+        bool isRevealed;
+        uint256 seed;
+        uint8 checksCount;
+        bool hasManyChecks;
+        uint16 composite;
+        bool isRoot;
+        uint8 colorBand;
+        uint8 gradient;
+        uint8 direction;
+        uint8 speed;
+    }
+}
+
+interface IEditionsApproval {
+    function setApprovalForAll(address operator, bool approved) external;
+}
+
 /// @title FundingVault
 /// @notice Holds the game's capital before it reaches the game: every trading fee (the hook pays it here through the
 ///         PoolManager), ETH contributions, and the game's surplus while the vault is short of one Ape (`shortfall`).
@@ -63,6 +101,11 @@ contract FundingVault is IFundingVault, ReentrancyGuard, Governed {
 
     address public immutable poolManager;
     address public immutable collection;
+    /// @notice Checks Editions: sold to the vault, each migrates into an 80-Check Original with the same id.
+    address public immutable editions;
+    /// @notice No acquisition is ever booked above this share of the council's 80-Check price (D012): whatever the
+    ///         owner sets the bid to, a colluding seller cannot be paid more than 120% of the schedule.
+    uint256 public constant MAX_PRICE_OF_SCHEDULE_BPS = 12_000;
     address public immutable burner;
     /// @notice The MigrationAuthority, the only caller of `migrateCapital`.
     address public immutable migrator;
@@ -152,11 +195,13 @@ contract FundingVault is IFundingVault, ReentrancyGuard, Governed {
     error NotEligible();
     error NothingToSend();
     error NotMigrator();
+    error NotFloorTier();
 
     constructor(
         address admin_,
         address poolManager_,
         address collection_,
+        address editions_,
         address burner_,
         address migrator_,
         BidParams memory bid_,
@@ -167,6 +212,7 @@ contract FundingVault is IFundingVault, ReentrancyGuard, Governed {
         if (poolManager_ == address(0) || collection_ == address(0) || burner_ == address(0)) revert ZeroAddress();
         poolManager = poolManager_;
         collection = collection_;
+        editions = editions_;
         burner = burner_;
         migrator = migrator_;
         _setBidParams(bid_);
@@ -187,6 +233,7 @@ contract FundingVault is IFundingVault, ReentrancyGuard, Governed {
         game = ICollectionGame(game_);
         poolOwner = ICollectionPoolOwner(poolOwner_);
         adapter = adapter_;
+        if (editions != address(0)) IEditionsApproval(editions).setApprovalForAll(collection, true);
     }
 
     // ------------------------------------------------------------------ inflows
@@ -387,9 +434,37 @@ contract FundingVault is IFundingVault, ReentrancyGuard, Governed {
         if (price == 0 || price > bid) revert AboveBid(bid);
         if (excluded[tokenId]) revert NotEligible();
         if (IERC721Owner(collection).ownerOf(tokenId) != msg.sender) revert NotAllowed();
+        _requireFloorTier(tokenId);
         IERC721Owner(collection).transferFrom(msg.sender, address(poolOwner), tokenId);
         _book(tokenId, msg.sender, address(0), price);
         SafeTransferLib.forceSafeTransferETH(msg.sender, price);
+    }
+
+    /// @notice Sells a Checks Edition to the protocol for `price`, at most the live bid (approve this vault on
+    ///         Editions first). The vault migrates it into an 80-Check Original with the same id, delivered to the
+    ///         pool owner's custody, and pays the seller as `sellToProtocol` does.
+    function sellEdition(uint256 editionId, uint256 price) external nonReentrant {
+        uint256 bid = liveBid();
+        if (price == 0 || price > bid) revert AboveBid(bid);
+        if (excluded[editionId]) revert NotEligible();
+        IERC721Owner(editions).transferFrom(msg.sender, address(this), editionId);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = editionId;
+        IChecksVault(collection).mint(ids, address(this)); // Checks burns the Edition; the Original arrives here
+        IERC721Owner(collection).transferFrom(address(this), address(poolOwner), editionId);
+        _book(editionId, msg.sender, editions, price);
+        SafeTransferLib.forceSafeTransferETH(msg.sender, price);
+    }
+
+    /// @dev Accepts an Original minted here from an Edition (`sellEdition`), nothing else.
+    function onERC721Received(address operator, address, uint256, bytes calldata) external view returns (bytes4) {
+        if (msg.sender != collection || operator != address(this)) revert NotAllowed();
+        return this.onERC721Received.selector;
+    }
+
+    /// @dev The bid buys 80-Check Originals only: the tier the council's schedule and the funding reference price.
+    function _requireFloorTier(uint256 tokenId) internal view {
+        if (IChecksTier(collection).getCheck(tokenId).stored.divisorIndex != 0) revert NotFloorTier();
     }
 
     /// @notice Buys `tokenId` through a registered marketplace adapter at its listing's actual price, which with the
@@ -411,6 +486,7 @@ contract FundingVault is IFundingVault, ReentrancyGuard, Governed {
         if (cap == 0) revert OverBudget();
         address custody = address(poolOwner);
         if (IERC721Owner(collection).ownerOf(tokenId) == custody) revert NotAllowed();
+        _requireFloorTier(tokenId);
         address a = adapter;
         uint256 aBefore = a.balance; // ETH anyone sent the adapter is not the vault's and stays there
         _adapterReturned = 0;
@@ -437,6 +513,7 @@ contract FundingVault is IFundingVault, ReentrancyGuard, Governed {
     function _book(uint256 tokenId, address seller, address via, uint256 price) internal {
         uint256 cap = _bid.maxPrice;
         if (cap != 0 && price > cap) revert OverBudget();
+        if (price > poolOwner.scheduleOf(0) * MAX_PRICE_OF_SCHEDULE_BPS / BPS) revert OverBudget();
         acquisitionSpend += price;
         ++acquisitionCount;
         uint256 bid = bidBalance;

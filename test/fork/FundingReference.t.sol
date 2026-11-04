@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {CollectionPoolOwner} from "../../src/core/CollectionPoolOwner.sol";
 import {ForkBase, IERC721Lite} from "./ForkBase.sol";
 import {FundingVault} from "../../src/core/FundingVault.sol";
 import {Governed} from "../../src/core/Governed.sol";
@@ -11,7 +12,7 @@ import {Governed} from "../../src/core/Governed.sol";
 ///         reference. `lastPrice` stays the exact price paid.
 contract FundingReferenceForkTest is ForkBase {
     function setUp() public {
-        deployBayc();
+        deployChecksAt(6 ether);
         launchGame(6 ether);
         accrueFees(200 ether);
         sys.vault.sweep(); // a live bid, so a holder can sell at any price up to it
@@ -20,7 +21,7 @@ contract FundingReferenceForkTest is ForkBase {
     /// @dev The vault buys the next Ape at `price` (the bid raised to it first).
     function _buyAt(uint256 price) internal {
         riseBidTo(price);
-        sellApeAt(nextApeId(), price);
+        sellCheckAt(nextCheckId(), price);
     }
 
     function _setMaxDrop(uint256 bps) internal {
@@ -37,7 +38,7 @@ contract FundingReferenceForkTest is ForkBase {
 
     /// A consenting 1-wei sale after a 6 ETH Ape: the price paid is recorded exactly, the reference falls only 25%.
     function test_oneWeiSaleMovesTheReferenceOnlyOneStep() public {
-        sellApeAt(nextApeId(), 1);
+        sellCheckAt(nextCheckId(), 1);
         assertEq(sys.vault.lastPrice(), 1, "the price paid, exactly");
         assertEq(sys.vault.referencePrice(), 4.5 ether, "6 less 25%");
         assertEq(sys.vault.activationThreshold(), 3.375 ether, "75% of the reference");
@@ -50,17 +51,18 @@ contract FundingReferenceForkTest is ForkBase {
         assertLt(hoursTaken, 72, "within three days");
     }
 
-    /// Repeated cheap sales walk the reference down 25% at a time, never below the Ape floor.
+    /// Repeated cheap sales walk the reference down 25% at a time, never below the floor (the 80 tier's lowest notional).
     function test_repeatedCheapSalesStopAtTheFloor() public {
-        uint256[7] memory want = [uint256(4.5 ether), 3.375 ether, 2.53125 ether, 1.8984375 ether, 1.423828125 ether,
-            1.06787109375 ether, 1 ether];
-        for (uint256 i; i < want.length; ++i) {
-            sellApeAt(nextApeId(), 1);
-            assertEq(sys.vault.referencePrice(), want[i]);
+        uint256 floor = sys.poolOwner.minNotionalWei();
+        uint256 want = 6 ether;
+        for (uint256 i; i < 12; ++i) {
+            want = want * 7_500 / 10_000;
+            if (want < floor) want = floor;
+            sellCheckAt(nextCheckId(), 1);
+            assertEq(sys.vault.referencePrice(), want);
         }
-        sellApeAt(nextApeId(), 1);
-        assertEq(sys.vault.referencePrice(), 1 ether, "held at the floor");
-        assertEq(sys.vault.shortfall() <= 1 ether, true);
+        assertEq(sys.vault.referencePrice(), floor, "held at the floor");
+        assertEq(sys.vault.shortfall() <= floor, true);
     }
 
     /// A genuine falling market, one Ape at each price, is followed exactly (each step is within 25%).
@@ -102,35 +104,30 @@ contract FundingReferenceForkTest is ForkBase {
         sys.vault.setBidParams(p);
         vm.stopPrank();
         _setMaxDrop(10_000);
-        sellApeAt(nextApeId(), 1);
-        assertEq(sys.vault.referencePrice(), 1 ether, "100%: straight to the floor");
+        sellCheckAt(nextCheckId(), 1);
+        assertEq(sys.vault.referencePrice(), sys.poolOwner.minNotionalWei(), "100%: straight to the floor");
         _setMaxDrop(100);
-        sellApeAt(nextApeId(), 1);
-        assertEq(sys.vault.referencePrice(), 1 ether, "the floor still holds");
+        sellCheckAt(nextCheckId(), 1);
+        assertEq(sys.vault.referencePrice(), sys.poolOwner.minNotionalWei(), "the floor still holds");
     }
 
-    /// The floor is the pool owner's Ape floor: raising it raises the lowest reference too.
-    function test_floorFollowsTheApeFloor() public {
+    /// The floor is the 80-Check tier's lowest notional (schedule x decay floor): the council raising the schedule
+    /// raises the lowest reference too.
+    function test_floorFollowsTheSchedule() public {
         _setMaxDrop(10_000);
-        sellApeAt(nextApeId(), 1);
-        assertEq(sys.vault.referencePrice(), 1 ether);
-        bytes memory call = abi.encodeWithSignature("listingParams()");
-        (bool ok, bytes memory ret) = address(sys.poolOwner).staticcall(call);
-        assertTrue(ok);
-        (uint256 a, , uint256 c, uint256 d, uint256 e, uint256 f) =
-            abi.decode(ret, (uint256, uint256, uint256, uint256, uint256, uint256));
-        govern(
-            address(sys.poolOwner),
-            abi.encodeWithSignature("setListingParams((uint256,uint256,uint256,uint256,uint256,uint256))", a, 2 ether, c, d, e, f)
-        );
-        sellApeAt(nextApeId(), 1);
-        assertEq(sys.vault.referencePrice(), 2 ether);
+        sellCheckAt(nextCheckId(), 1);
+        assertEq(sys.vault.referencePrice(), sys.poolOwner.minNotionalWei());
+        uint256[8] memory s = sys.poolOwner.schedule();
+        s[0] = s[0] * 2;
+        councilCall(address(sys.poolOwner), abi.encodeCall(CollectionPoolOwner.setSchedule, (s)));
+        sellCheckAt(nextCheckId(), 1);
+        assertEq(sys.vault.referencePrice(), s[0] * cfg.listing.floorBps / 10_000);
     }
 
     /// A donated Ape is registered at the funding reference, not at a cheap sale's price.
     function test_donationUsesTheReference() public {
-        sellApeAt(nextApeId(), 1);
-        uint256 id = nextApeId();
+        sellCheckAt(nextCheckId(), 1);
+        uint256 id = nextCheckId();
         address holder = IERC721Lite(cfg.collection).ownerOf(id);
         vm.startPrank(holder);
         IERC721Lite(cfg.collection).setApprovalForAll(address(sys.vault), true);

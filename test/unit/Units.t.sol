@@ -75,7 +75,7 @@ contract MockOwnerPool {
 /// @notice Unit tests (no fork): governance, token, the burner's milestone reserve.
 contract UnitsTest is Test {
     address owner = makeAddr("cg.unit.owner");
-    Admin adm = new Admin(owner);
+    Admin adm = new Admin(owner, makeAddr("council"));
     address admAddr = address(adm);
 
     // ------------------------------------------------------------------ token

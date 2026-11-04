@@ -21,7 +21,7 @@ contract CoinAllowlistForkTest is ForkBase {
     CoinVault box;
 
     function setUp() public {
-        deployBayc();
+        deployChecks();
         openMarket();
         pastOpeningCurve();
         buyCoin(alice, 1 ether);

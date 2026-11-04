@@ -14,7 +14,7 @@ contract FwaPoolForkTest is ForkBase {
     IERC20Lite fwa = IERC20Lite(MAINNET_FWA_TOKEN);
 
     function setUp() public {
-        deployBayc();
+        deployChecks();
     }
 
     /// @dev Gives `fwaHolder` FWA the only way an ordinary wallet can receive it: a buy delivered by the PoolManager.
@@ -90,9 +90,9 @@ contract FwaPoolForkTest is ForkBase {
     function test_directFwaPurchaseBlockedBeforeActivation() public {
         createPool();
         openMarket();
-        accrueFees(6 ether);
-        riseBidTo(6 ether);
-        sellApe(nextApeId());
+        accrueFees(0.25 ether);
+        riseBidTo(0.25 ether);
+        sellCheck(nextCheckId());
         accrueFees(sys.game.capitalNeed() + 0.1 ether); // + the KeeperFund top-up
         syncAll();
         assertTrue(sys.game.ready(), "ready");

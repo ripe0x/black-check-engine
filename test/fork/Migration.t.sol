@@ -39,7 +39,7 @@ contract MigrationForkTest is ForkBase {
 
     function setUp() public {
         setUpFork();
-        cfg = _baycConfig(owner);
+        cfg = _testChecksConfigAt(6 ether);
         cfg.initialBoardSize = 160; // 1.6 x the launch board: ≈ 5 ETH of Shape and Pack backing
         _deploy();
         m = sys.migration;
@@ -61,9 +61,9 @@ contract MigrationForkTest is ForkBase {
         // two more Apes bought from holders at the standing bid
         accrueFees(30 ether);
         riseBidTo(6 ether);
-        sellApe(nextApeId());
+        sellCheck(nextCheckId());
         riseBidTo(6 ether);
-        sellApe(nextApeId());
+        sellCheck(nextCheckId());
         playMany(bob, 30, 8);
         accrueFees(2 ether); // treasury capital beyond what the game needs
         // draws in flight when the migration starts
@@ -74,7 +74,7 @@ contract MigrationForkTest is ForkBase {
             apeIds.push(sys.poolOwner.custodyAt(i));
         }
         for (uint256 i; i < sys.poolOwner.listedCount(); ++i) {
-            (uint256 tokenId,,,,) = sys.poolOwner.cListings(sys.poolOwner.listedAt(i));
+            (uint256 tokenId,,,,,) = sys.poolOwner.cListings(sys.poolOwner.listedAt(i));
             apeIds.push(tokenId);
         }
         assertEq(apeIds.length, 3, "three Apes held");

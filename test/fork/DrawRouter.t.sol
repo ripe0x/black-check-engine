@@ -14,8 +14,8 @@ contract DrawRouterForkTest is ForkBase {
     address bob = makeAddr("cg.player.bob");
 
     function setUp() public {
-        deployBayc();
-        launchGame(6 ether);
+        deployChecks();
+        launchGame(0.25 ether);
     }
 
     function _routerDraw(address who, uint256 settle, uint256 count) internal returns (uint256[] memory, uint256, uint256) {

@@ -28,6 +28,7 @@ interface ICollectionPoolOwner {
     function collection() external view returns (address);
     function isCollectionListing(uint256 listingId) external view returns (bool);
     function minNotionalWei() external view returns (uint256);
+    function scheduleOf(uint8 tier) external view returns (uint256);
 }
 
 interface IBurner {

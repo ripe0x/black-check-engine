@@ -19,6 +19,7 @@ import {Lens} from "../src/periphery/Lens.sol";
 import {DrawRouter, IGameSync} from "../src/periphery/DrawRouter.sol";
 import {SeaportAdapter} from "../src/periphery/SeaportAdapter.sol";
 import {LayerTap} from "../src/periphery/LayerTap.sol";
+import {ChecksDesk} from "../src/checks/ChecksDesk.sol";
 
 interface IPacksView {
     function shapes() external view returns (address);
@@ -43,9 +44,11 @@ abstract contract DeploySystem {
 
     struct Config {
         // administration
-        address owner; // the one administrator (two-step transferable, renounceable)
+        address owner; // the operator: routine bounded settings (two-step transferable, renounceable)
+        address council; // the council timelock: value and custody powers (D012)
         // external
-        address collection; // the ERC-721 collection
+        address collection; // Checks Originals
+        address editions; // Checks Editions (never a purchaser)
         address shapes;
         address fwaFactory;
         address fwaImplementation;
@@ -77,6 +80,10 @@ abstract contract DeploySystem {
         // collection listings
         uint256 maxInFlight;
         CollectionPoolOwner.ListingParams listing;
+        uint256[8] schedule; // price per Checks tier (D003; council-settable)
+        // the Checks desk: composition pace and burns (owner), buyout prices (council)
+        ChecksDesk.ComposeParams compose;
+        ChecksDesk.BuyoutParams buyout;
         // acquisition: the vault's standing bid
         FundingVault.BidParams bid;
         uint256 refPrice; // the live floor at deploy
@@ -103,6 +110,7 @@ abstract contract DeploySystem {
         FundingVault vault;
         CollectionHook hook;
         CollectionPoolOwner poolOwner;
+        ChecksDesk desk;
         CollectionGame game;
         Sunset sunset;
         SeaportAdapter adapter;
@@ -123,6 +131,9 @@ abstract contract DeploySystem {
     function _deploySystem(Config memory c, address deployer) internal returns (System memory s) {
         _deployGovAndToken(c, s, deployer);
         _deployHolders(c, s);
+        s.desk = new ChecksDesk(
+            address(s.admin), address(s.poolOwner), address(s.token), address(s.vault), c.compose, c.buyout
+        );
         _deployGame(c, s);
         s.sunset = new Sunset(c.collection, address(s.burner), address(s.poolOwner), address(s.game));
         if (c.seaport != address(0)) s.adapter = new SeaportAdapter(c.seaport, address(s.vault));
@@ -132,7 +143,7 @@ abstract contract DeploySystem {
     }
 
     function _deployGovAndToken(Config memory c, System memory s, address deployer) internal {
-        s.admin = new Admin(c.owner);
+        s.admin = new Admin(c.owner, c.council);
         address a = address(s.admin);
         s.migration = new MigrationAuthority(a);
         // The coin mints its whole supply to ProtocolLiquidity, which needs the coin's address: predict it.
@@ -153,7 +164,8 @@ abstract contract DeploySystem {
             a, IPoolManager(c.poolManager), address(s.token), c.cadence, c.tiers, c.milestoneBps
         );
         s.vault = new FundingVault(
-            a, c.poolManager, c.collection, address(s.burner), address(s.migration), c.bid, c.overflowBps, c.refPrice,
+            a, c.poolManager, c.collection, c.editions, address(s.burner), address(s.migration), c.bid, c.overflowBps,
+            c.refPrice,
             c.firstThresholdBps
         );
         if (c.layerBurner != address(0)) s.layerTap = address(new LayerTap(c.layerBurner));
@@ -166,9 +178,9 @@ abstract contract DeploySystem {
     ///      minimum. Created from the vendored artifacts (built with their own compiler settings); its admin, the owner,
     ///      reaches presentation only.
     function _deployPacks(Config memory c, System memory s) internal {
-        s.packRenderer = VM.deployCode("out/ShapePackRenderer.sol/ShapePackRenderer.json", abi.encode(c.shapes));
+        s.packRenderer = VM.deployCode("ShapePackRenderer.sol:ShapePackRenderer", abi.encode(c.shapes));
         s.packs = VM.deployCode(
-            "out/ShapePacks.sol/ShapePacks.json",
+            "ShapePacks.sol:ShapePacks",
             abi.encode(c.shapes, s.packRenderer, c.owner, c.packsName, c.packsSymbol, c.packMinUnits)
         );
     }
@@ -185,6 +197,7 @@ abstract contract DeploySystem {
                 vault: address(s.vault),
                 migrator: address(s.migration),
                 listing: c.listing,
+                schedule: c.schedule,
                 maxInFlight: c.maxInFlight
             })
         );
@@ -220,7 +233,7 @@ abstract contract DeploySystem {
         s.liquidity.wire(address(s.hook), address(s.poolOwner));
         s.burner.wire(address(s.hook), address(s.game), address(s.poolOwner));
         s.vault.wire(address(s.game), address(s.poolOwner), address(s.adapter));
-        s.poolOwner.wire(address(s.game), _systemContracts(s));
+        s.poolOwner.wire(address(s.game), address(s.desk), _systemContracts(c, s));
         s.migration.wire(address(s.game), address(s.poolOwner), address(s.vault), address(s.hook), address(s.sunset));
         address[] memory own = new address[](3);
         (own[0], own[1], own[2]) = (c.collection, c.shapes, s.packs);
@@ -286,9 +299,10 @@ abstract contract DeploySystem {
     function postflight(Config memory c, System memory s, address deployer) public view {
         // administration: one Admin naming the owner, read by every governed contract; no deployer power left
         _check(s.admin.owner() == c.owner && s.admin.pendingOwner() == address(0), "owner");
-        address[7] memory governed = [
+        _check(s.admin.council() == c.council && c.council != c.owner, "council");
+        address[8] memory governed = [
             address(s.liquidity), address(s.burner), address(s.vault), address(s.hook), address(s.poolOwner),
-            address(s.game), address(s.migration)
+            address(s.game), address(s.migration), address(s.desk)
         ];
         for (uint256 i; i < governed.length; ++i) {
             IGovernedView g = IGovernedView(governed[i]);
@@ -343,7 +357,9 @@ abstract contract DeploySystem {
         _check(keccak256(abi.encode(s.burner.cadence())) == keccak256(abi.encode(c.cadence)), "buyback cadence");
         _check(keccak256(abi.encode(s.burner.tiers())) == keccak256(abi.encode(c.tiers)), "buyback tiers");
         // vault and custody
-        _check(s.vault.collection() == c.collection, "vault collection");
+        _check(s.vault.collection() == c.collection && s.vault.editions() == c.editions, "vault collection");
+        // the vault can migrate Editions: Checks may burn the Editions it holds
+        _check(c.editions == address(0) || IApprovalView(c.editions).isApprovedForAll(address(s.vault), c.collection), "edition approval");
         _check(s.vault.poolManager() == c.poolManager && s.vault.burner() == address(s.burner), "vault refs");
         _check(address(s.vault.game()) == address(s.game) && address(s.vault.poolOwner()) == address(s.poolOwner), "vault wiring");
         _check(s.vault.adapter() == address(s.adapter), "adapter");
@@ -382,6 +398,12 @@ abstract contract DeploySystem {
         _check(s.poolOwner.expectedImplementation() == c.fwaImplementation, "fwa implementation");
         CollectionPoolOwner.ListingParams memory lp = s.poolOwner.listingParams();
         _check(keccak256(abi.encode(lp)) == keccak256(abi.encode(c.listing)), "listing params");
+        _check(keccak256(abi.encode(s.poolOwner.schedule())) == keccak256(abi.encode(c.schedule)), "schedule");
+        // the Checks desk: wired once into the pool owner, its rules as configured
+        _check(s.poolOwner.desk() == address(s.desk) && address(s.desk.poolOwner()) == address(s.poolOwner), "desk");
+        _check(address(s.desk.coin()) == address(s.token) && s.desk.vault() == address(s.vault), "desk refs");
+        _check(keccak256(abi.encode(s.desk.composeParams())) == keccak256(abi.encode(c.compose)), "compose params");
+        _check(keccak256(abi.encode(s.desk.buyoutParams())) == keccak256(abi.encode(c.buyout)), "buyout params");
         _check(s.poolOwner.maxInFlight() == c.maxInFlight, "in-flight bound");
         // game
         _check(address(s.game.poolOwner()) == address(s.poolOwner) && address(s.game.vault()) == address(s.vault), "game refs");
@@ -441,6 +463,12 @@ abstract contract DeploySystem {
     /// @dev Names, presentation and the pool owner's purchaser exclusions (split out of `postflight` for stack depth).
     function _postflightIdentity(Config memory c, System memory s) internal view {
         _check(_eq(s.token.name(), c.name) && _eq(s.token.symbol(), c.symbol), "coin identity");
+        // invariant 9: never the existing Black Check project's name or ticker, nor the unresolved placeholders
+        _check(
+            !_eq(c.symbol, "BLACK") && !_eq(c.symbol, "BLKCHK") && !_eq(c.name, "Black Check")
+                && !_eq(c.name, "Placeholder Coin") && bytes(c.name).length != 0 && bytes(c.symbol).length != 0,
+            "coin name"
+        );
         _check(
             _eq(s.token.imageUrl(), c.coinImage) && _eq(s.token.metadata(), c.coinDescription)
                 && s.token.metadataRenderer() == address(0),
@@ -449,7 +477,7 @@ abstract contract DeploySystem {
         IPacksView p = IPacksView(s.packs);
         _check(_eq(p.name(), c.packsName) && _eq(p.symbol(), c.packsSymbol), "packs identity");
         _check(p.renderer() == s.packRenderer && IPacksView(s.packRenderer).shapes() == c.shapes, "packs renderer");
-        address[] memory sys = _systemContracts(s);
+        address[] memory sys = _systemContracts(c, s);
         for (uint256 i; i < sys.length; ++i) {
             _check(s.poolOwner.isSystem(sys[i]), "system purchaser");
         }
@@ -457,13 +485,15 @@ abstract contract DeploySystem {
 
     /// @dev Every contract the deploy creates that is not already refused as a draw's purchaser (round 4 G3), the
     ///      LayerTap included when there is one.
-    function _systemContracts(System memory s) internal pure returns (address[] memory sys) {
-        sys = new address[](s.layerTap == address(0) ? 10 : 11);
+    ///      Checks Editions too: an Edition contract holding a won Check could never pass it on.
+    function _systemContracts(Config memory c, System memory s) internal pure returns (address[] memory sys) {
+        sys = new address[](s.layerTap == address(0) ? 11 : 12);
         (sys[0], sys[1], sys[2], sys[3], sys[4]) =
             (address(s.burner), address(s.hook), address(s.liquidity), address(s.token), address(s.admin));
         (sys[5], sys[6], sys[7], sys[8], sys[9]) =
             (address(s.sunset), address(s.adapter), address(s.lens), address(s.drawRouter), s.packRenderer);
-        if (s.layerTap != address(0)) sys[10] = s.layerTap;
+        sys[10] = c.editions;
+        if (s.layerTap != address(0)) sys[11] = s.layerTap;
     }
 
     function _eq(string memory a, string memory b) private pure returns (bool) {

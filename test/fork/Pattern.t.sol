@@ -12,8 +12,8 @@ contract PatternForkTest is ForkBase {
     address alice = makeAddr("cg.player.alice");
 
     function setUp() public {
-        deployBayc();
-        launchGame(6 ether);
+        deployChecks();
+        launchGame(0.25 ether);
     }
 
     function _setPattern(uint256[] memory pattern) internal {

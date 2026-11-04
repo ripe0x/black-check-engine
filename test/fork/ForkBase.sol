@@ -7,6 +7,7 @@ import {IFWAPool, IFWAFactory} from "../../src/interfaces/IFWA.sol";
 import {LaunchConfig} from "../../script/LaunchConfig.sol";
 import {FwaFeeBuyer, FwaFeeRelay} from "../../src/periphery/FwaFeeRoutes.sol";
 import {Swapper} from "../utils/Swapper.sol";
+import {IChecksOriginals} from "../../src/interfaces/IChecks.sol";
 
 interface IVrfConsumer {
     function rawFulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) external;
@@ -41,20 +42,27 @@ interface IERC20Lite {
 }
 
 /// @notice Mainnet fork base. Forks Ethereum at `FORK_BLOCK` from `MAINNET_RPC_URL` (an archive endpoint, or a local
-///         anvil fork of one) and deploys a whole collection game with `script/DeploySystem.sol` against the real BAYC,
-///         Shapes, FWA factory, VRF service, FWA token and Uniswap v4 PoolManager.
+///         anvil fork of one) and deploys the whole Checks game with `script/DeploySystem.sol` against the real Checks
+///         Originals and Editions, Shapes, FWA V2 factory, VRF service, FWA token and Uniswap v4 PoolManager.
+/// @dev Provenance: ripe0x/collection-games `test/fork/ForkBase.sol` (409ca75). Changed for Checks: the fork block is
+///      after FWA reopened V2 pool creation (26,335,860, D014), with no FWA switch opened locally; collection NFTs are
+///      real 80-Check Originals bought from their holders.
 abstract contract ForkBase is Test, LaunchConfig {
-    uint256 internal constant FORK_BLOCK = 26_284_000;
+    /// @dev After FWA switched V2 pool creation back on (off 26,329,277-26,335,859; D014). Nothing is opened locally.
+    uint256 internal constant FORK_BLOCK = 26_337_000;
     address internal constant VRF_SERVICE = 0xA4adFC35dB18326eFB3b5D9bf66A8103Ec2D5EE2;
     /// @dev Opening tick: ~20M coins per ETH (an opening fully diluted value of ~50 ETH).
     int24 internal constant START_TICK = 173_000; // ~32.6M coins per ETH: ~30.7 ETH opening FDV (D70)
 
     address internal owner = makeAddr("cg.owner.owner");
+    /// @dev Stands in for the council TimelockController (D012) until the governance phase deploys the real one.
+    address internal council = makeAddr("checks.council");
     address internal keeper = makeAddr("cg.keeper");
     Config internal cfg;
     System internal sys;
     IFWAPool internal pool;
     Swapper internal swapper;
+    /// @dev Next Checks token id `nextCheckId` examines.
     uint256 internal nextApe = 1;
 
     function setUpFork() internal {
@@ -65,11 +73,44 @@ abstract contract ForkBase is Test, LaunchConfig {
         vm.txGasPrice(0);
     }
 
-    /// @dev Forks and deploys the BAYC game from this test contract (no pool yet).
-    function deployBayc() internal {
+    /// @dev Forks and deploys the Checks game from this test contract (no pool yet).
+    function deployChecks() internal {
         setUpFork();
-        cfg = _baycConfig(owner);
+        cfg = _testChecksConfig();
         _deploy();
+    }
+
+    /// @dev The game with the 80-Check tier (and the bid's reference) at `price`: the vault and bid suites keep
+    ///      collection-games' Ape-scale amounts, which exercise the same mechanics at any price level.
+    function deployChecksAt(uint256 price) internal {
+        setUpFork();
+        cfg = _testChecksConfigAt(price);
+        _deploy();
+    }
+
+    function _testChecksConfigAt(uint256 price) internal view returns (Config memory c) {
+        c = _testChecksConfig();
+        c.schedule[0] = price;
+        c.refPrice = price;
+        c.listing.floorBps = 1_000; // the funding reference's floor at 10% of the price, so walk-downs are visible
+    }
+
+    /// @dev The launch configuration under a test coin identity (the postflight refuses the placeholders, invariant 9).
+    function _testChecksConfig() internal view returns (Config memory c) {
+        c = _checksConfig(owner, council);
+        c.name = "Survival Test";
+        c.symbol = "SURVT";
+    }
+
+    /// @dev Calls `target` as the council (in the governance phase: through the real timelock).
+    function councilCall(address target, bytes memory data) internal {
+        vm.prank(council);
+        (bool ok, bytes memory ret) = target.call(data);
+        if (!ok) {
+            assembly ("memory-safe") {
+                revert(add(ret, 0x20), mload(ret))
+            }
+        }
     }
 
     function _deploy() internal {
@@ -103,7 +144,7 @@ abstract contract ForkBase is Test, LaunchConfig {
         uint256 eth = fwaQuoteEth(fee * 10_400 / 10_000);
         vm.deal(address(this), address(this).balance + eth);
         buyer.buyTo{value: eth}(address(sys.poolOwner), fee);
-        sys.poolOwner.createPool(keccak256("collection-games.bayc.v1"));
+        sys.poolOwner.createPool(keccak256("checks-survival.pool.v1"));
         pool = sys.poolOwner.pool();
     }
 
@@ -160,13 +201,13 @@ abstract contract ForkBase is Test, LaunchConfig {
 
     // ------------------------------------------------------------------ collection
 
-    /// @dev An ordinary BAYC holder sells token `id` to the protocol for the whole live bid.
-    function sellApe(uint256 id) internal returns (uint256 price) {
-        price = sellApeAt(id, sys.vault.liveBid());
+    /// @dev An ordinary Checks holder sells token `id` to the protocol for the whole live bid.
+    function sellCheck(uint256 id) internal returns (uint256 price) {
+        price = sellCheckAt(id, sys.vault.liveBid());
     }
 
-    /// @dev An ordinary BAYC holder sells token `id` to the protocol for `price` (at most the live bid).
-    function sellApeAt(uint256 id, uint256 price) internal returns (uint256) {
+    /// @dev An ordinary Checks holder sells token `id` to the protocol for `price` (at most the live bid).
+    function sellCheckAt(uint256 id, uint256 price) internal returns (uint256) {
         address holder = IERC721Lite(cfg.collection).ownerOf(id);
         vm.startPrank(holder);
         IERC721Lite(cfg.collection).setApprovalForAll(address(sys.vault), true);
@@ -191,12 +232,17 @@ abstract contract ForkBase is Test, LaunchConfig {
         }
     }
 
-    /// @dev Finds the next BAYC token not already in protocol custody, from `nextApe`.
-    function nextApeId() internal returns (uint256 id) {
+    /// @dev Finds the next live 80-Check Original held by an ordinary account (not a contract, not the protocol),
+    ///      from `nextApe`. Burned ids (composites' inputs) are skipped.
+    function nextCheckId() internal returns (uint256 id) {
+        IChecksOriginals checks = IChecksOriginals(cfg.collection);
         while (true) {
             id = nextApe++;
-            address o = IERC721Lite(cfg.collection).ownerOf(id);
-            if (o != address(sys.poolOwner) && o.code.length == 0) return id;
+            require(id < 20_000, "nextCheckId: none left");
+            try checks.ownerOf(id) returns (address o) {
+                if (o == address(sys.poolOwner) || o.code.length != 0 || o == address(0)) continue;
+                if (checks.getCheck(id).stored.divisorIndex == 0) return id;
+            } catch {}
         }
     }
 
@@ -224,7 +270,7 @@ abstract contract ForkBase is Test, LaunchConfig {
         accrueFees(apePrice + 0.05 ether);
         // the live bid fills to its threshold at once, then is metered up by sweeps
         assertGe(riseBidTo(apePrice), apePrice, "bid metered up to the price");
-        sellApeAt(nextApeId(), apePrice);
+        sellCheckAt(nextCheckId(), apePrice);
         // the board and reserve, plus room for the keeper pay of listing it
         uint256 need = sys.game.capitalNeed() + listingPayRoom();
         accrueFees(need);

@@ -383,5 +383,22 @@ Record important noncontroversial implementation choices with evidence and commi
   reduce trust, since an upgrade of either could move assets. Per-pool `FwaV2Controller`s stay immutable because FWA
   pool ownership is permanent and one pool per address. Evidence: `test/fork/Migration.t.sol`.
 
+- C013 Rebase (R1, 33440ff): collection-games 409ca75 imported unchanged; OpenZeppelin now only from the copy Shapes
+  vendors (v5.5.0, `TimelockController` included), the separate v5.1.0 submodule removed. Base suite on the base's block
+  26,284,000: 269 of 281 pass; the 12 throughput studies passed every assertion and stopped only at writing receipts into
+  a directory not yet copied (`docs/receipts/throughput/`, now created).
+- C014 Fork block 26,337,000 for every fork test (R2): after FWA reopened V2 pool creation (26,335,860, D014), so pool
+  creation is proven without opening any FWA switch locally.
+- C015 Global `via_ir` again (R3): the Checks pool owner is 27,660 B without it, 23,377 B with it (EIP-170 24,576). The
+  deploy routine imports every contract, so a per-file restriction would compile the whole system with IR anyway.
+  collection-games compiled without it, so its gas receipts are not comparable one to one.
+- C016 Checks custody on the base (R3): the pool owner keeps collection-games' structure (batched listing, exposure
+  target, rows asked for, per-listing settlement, live purchase gate) and changes only what Checks need: a tier read
+  from Checks at registration, a council-set price schedule per tier (D003), survival counted from FWA's own numbers
+  (listed - withdrawn - active, C010, from rc2), decay per survived draw to a floor (D005), a schedule change repricing
+  both ways, a refunded delivery starting a new episode, and three desk-only operations (compose, Black formation,
+  release to a buyer) that withdraw open, active listings only with nothing unsettled. Composition and buyout rules
+  live in a separate immutable `ChecksDesk` (from rc2 `Engine`), which holds nothing.
+
 ## FOUNDATIONAL COMMITMENTS
 Follow the constraints in CLAUDE.md. If a real technical constraint conflicts with one, document it and recommend the simplest alternative while advancing independent work.

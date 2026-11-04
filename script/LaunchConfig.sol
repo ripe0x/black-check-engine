@@ -6,13 +6,14 @@ import {CollectionGame} from "../src/game/CollectionGame.sol";
 import {FundingVault} from "../src/core/FundingVault.sol";
 import {CollectionPoolOwner} from "../src/core/CollectionPoolOwner.sol";
 import {CollectionBurner} from "../src/treasury/CollectionBurner.sol";
+import {ChecksDesk} from "../src/checks/ChecksDesk.sol";
 
-/// @notice Collection configurations. Every collection-specific value lives here (or in the environment file), never
-///         in `src/`. `_baycConfig` is the first game; `_collectionConfig` is the shared template any ERC-721 uses.
-///         Economic values: docs/ECONOMICS.md. Items marked OWNER are deploy-time decisions flagged in
-///         docs/IMPLEMENTOR_DECISIONS.md "Needs owner review".
+/// @notice Launch configuration of the Checks game. Every launch value lives here (or in the environment file), never
+///         in `src/`. `_collectionConfig` is collection-games' template (its values carry the Ape game's decisions,
+///         docs/base/IMPLEMENTOR_DECISIONS.md); `_checksConfig` applies this project's decisions (docs/DECISIONS.md).
 abstract contract LaunchConfig is DeploySystem {
-    address internal constant MAINNET_BAYC = 0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D;
+    address internal constant MAINNET_CHECKS = 0x036721e5A769Cc48B3189EFbb9ccE4471E8A48B1;
+    address internal constant MAINNET_EDITIONS = 0x34eEBEE6942d8Def3c125458D1a86e0A897fd6f9;
     address internal constant MAINNET_SHAPES = 0x6fE9193276bF7aBCbEE44AB7aFd717d637D6FAf0;
     address internal constant MAINNET_FWA_FACTORY = 0xF5A3A153164791AB579C3d9ba5DBECf7cDfd300c;
     address internal constant MAINNET_FWA_IMPL = 0xEaa4d032908A9734a2c7939c0D211c35ad51eb31;
@@ -100,15 +101,6 @@ abstract contract LaunchConfig is DeploySystem {
             continuityShareBps: 3_500 // D64, A5: of each distribution to the vault, while it is short of one NFT at the last price
         });
         c.maxInFlight = 10; // D82: FWA's own limit of requests awaiting randomness per pool (D65 had 3: fewest refunds)
-        // every collection NFT is listed; its notional falls with the gameplay credited to it (D59, sim/results/pool.md)
-        c.listing = CollectionPoolOwner.ListingParams({
-            startBps: 10_000, // opens at 100% of its acquisition cost
-            minNotionalWei: 1 ether, // D82: never below 1 ETH, whatever it cost (a cheaper NFT opens at 1 ETH)
-            decayBps: 1_000, // falls 0.1 ETH per ETH of gameplay credited to it (gameplay is shared among the NFTs listed)
-            stepBps: 500, // repriced at FWA once it has fallen 5% (or reached its minimum)
-            targetBps: 2_000, // D64, A3: collection exposure target; the board grows to keep it
-            dailyDecayBps: 0 // D78: no time decay at launch; the owner may switch it on (`setListingParams`)
-        });
         // the live bid (docs/SPEC.md "The bid", D59): Permanent Collection's funding-driven model. Below the activation
         // threshold (75% of the last clearing price) available ETH enters the bid at once; above it at most 1 ETH per
         // 300 blocks (~24 ETH a day, D82: the owner's choice over D59's 0.05); above 120% of the last acquisition price
@@ -175,9 +167,35 @@ abstract contract LaunchConfig is DeploySystem {
         c.openingAllowance = 0.2 ether; // D82
     }
 
-    /// @notice Bored Ape Yacht Club. Coin identity is an independent placeholder (OWNER): no BAYC or Yuga branding.
-    function _baycConfig(address owner) internal pure returns (Config memory c) {
-        c = _collectionConfig(owner, MAINNET_BAYC, "ApeBall", "APEBALL"); // identity (D69): verify no conflict before deploy
-        c.refPrice = 6 ether; // OWNER: the live floor on the day (REF_PRICE_WEI); first threshold 6 ETH
+    /// @notice Checks Originals. The coin's name and symbol are placeholders the postflight refuses (invariant 9): a
+    ///         deployment sets its own.
+    function _checksConfig(address owner, address council) internal pure returns (Config memory c) {
+        c = _collectionConfig(owner, MAINNET_CHECKS, "Placeholder Coin", "BLACK");
+        c.council = council;
+        c.editions = MAINNET_EDITIONS;
+        // D003: price per tier, council-settable. 80-Check floor 0.25 ETH (late October 2026) x Original units, no
+        // rarity premium: 80, 40, 20, 10, 5, 4, 1 and Black = 1, 2, 4, 8, 16, 32, 64 and 4,096 units
+        c.schedule = [uint256(0.25 ether), 0.5 ether, 1 ether, 2 ether, 4 ether, 8 ether, 16 ether, 1_024 ether];
+        // D005: 0.2% of the schedule price per survived draw, down to 85%; reprice on 5% moves; D015: no daily decay
+        c.listing = CollectionPoolOwner.ListingParams({
+            decayBps: 20,
+            floorBps: 8_500,
+            stepBps: 500,
+            targetBps: 2_000,
+            dailyDecayBps: 0
+        });
+        // D008: 100 survived draws to compose (200 for singles into a Black Check); the free deterministic outcome
+        // 50 draws later; coin burned for a free choice (placeholders until the coin trades)
+        c.compose = ChecksDesk.ComposeParams({
+            drawsToCompose: [uint32(100), 100, 100, 100, 100, 100, 200],
+            graceDraws: 50,
+            composeBurn: [
+                uint256(1_000 ether), 2_000 ether, 4_000 ether, 8_000 ether, 16_000 ether, 32_000 ether, 1_000_000 ether
+            ]
+        });
+        // D006: ETH buyouts at schedule + 25%; coin buyouts disabled at launch (the council enables tiers later)
+        uint256[8] memory none;
+        c.buyout = ChecksDesk.BuyoutParams({ethMarkupBps: 2_500, coinPrice: none});
+        c.refPrice = 0.25 ether; // the 80-Check floor: the first bid (replaced by the per-tier bid, plan R5)
     }
 }

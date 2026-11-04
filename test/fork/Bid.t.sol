@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {CollectionPoolOwner} from "../../src/core/CollectionPoolOwner.sol";
 import {ForkBase, IERC721Lite} from "./ForkBase.sol";
 import {FundingVault} from "../../src/core/FundingVault.sol";
 import {CollectionGame} from "../../src/game/CollectionGame.sol";
@@ -16,7 +17,7 @@ contract BidForkTest is ForkBase {
     uint256 constant COOLDOWN = 300;
 
     function setUp() public {
-        deployBayc();
+        deployChecksAt(6 ether);
         launchGame(6 ether); // the first Ape at 6 ETH: the threshold is now 4.5 ETH
         _wait(); // past the launch's last metered sweep
     }
@@ -77,7 +78,7 @@ contract BidForkTest is ForkBase {
         uint256 bid = riseBidTo(6.2 ether);
         assertGe(bid, 6.2 ether);
         uint256 balance = sys.vault.bidBalance();
-        sellApeAt(nextApeId(), 5.9 ether); // the holder asked less than the bid
+        sellCheckAt(nextCheckId(), 5.9 ether); // the holder asked less than the bid
         assertEq(sys.vault.bidBalance(), balance - 5.9 ether, "unspent bid ETH stays");
         assertEq(sys.vault.lastPrice(), 5.9 ether);
         assertEq(sys.vault.activationThreshold(), 4.425 ether, "75% of 5.9");
@@ -90,7 +91,7 @@ contract BidForkTest is ForkBase {
     function test_sellerNamesPriceAtMostTheBid() public {
         accrueFees(20 ether);
         uint256 bid = riseBidTo(5 ether);
-        uint256 id = nextApeId();
+        uint256 id = nextCheckId();
         address holder = IERC721Lite(cfg.collection).ownerOf(id);
         vm.startPrank(holder);
         IERC721Lite(cfg.collection).setApprovalForAll(address(sys.vault), true);
@@ -110,7 +111,7 @@ contract BidForkTest is ForkBase {
         accrueFees(60 ether);
         for (uint256 i; i < 5; ++i) {
             riseBidTo(6 ether);
-            sellApeAt(nextApeId(), 6 ether);
+            sellCheckAt(nextCheckId(), 6 ether);
             assertEq(sys.vault.activationThreshold(), 4.5 ether);
         }
         assertEq(sys.poolOwner.heldCount(), 6);
@@ -133,7 +134,7 @@ contract BidForkTest is ForkBase {
         assertLt(budget, 6 ether);
         assertEq(sys.vault.liveBid(), budget, "the bid is what the game does not need");
         // a seller cannot be paid out of the game's capital
-        uint256 id = nextApeId();
+        uint256 id = nextCheckId();
         address holder = IERC721Lite(cfg.collection).ownerOf(id);
         vm.startPrank(holder);
         IERC721Lite(cfg.collection).setApprovalForAll(address(sys.vault), true);
@@ -179,9 +180,21 @@ contract BidForkTest is ForkBase {
         assertGe(bid, 12 ether, "reached a doubled floor");
         // 4.8 ETH above the 7.2 ETH ceiling at 0.01 ETH per 300 blocks (D82): 480 sweeps, 20 days
         assertApproxEqRel((block.number - start) * 12, 20 days, 0.15e18, "slowly above the ceiling");
-        sellApeAt(nextApeId(), 12 ether);
+        // the bid follows on its own, but no purchase is booked above 120% of the council's price (D012): the council
+        // moves the schedule with the market first
+        uint256 id = nextCheckId();
+        vm.expectRevert(FundingVault.OverBudget.selector);
+        this.sellAt(id, 12 ether);
+        uint256[8] memory sched = sys.poolOwner.schedule();
+        sched[0] = 12 ether;
+        councilCall(address(sys.poolOwner), abi.encodeCall(CollectionPoolOwner.setSchedule, (sched)));
+        sellCheckAt(id, 12 ether);
         assertEq(sys.vault.activationThreshold(), 9 ether);
         assertEq(sys.vault.bidCeiling(), 14.4 ether, "120% of the new price");
+    }
+
+    function sellAt(uint256 id, uint256 price) external {
+        sellCheckAt(id, price);
     }
 
     /// The ceiling (D60, D61): above 120% of the last acquisition price a sweep forwards only `slowSweepWei`; a bid nobody
@@ -197,7 +210,7 @@ contract BidForkTest is ForkBase {
         sys.vault.sweep();
         assertEq(sys.vault.liveBid(), 7.22 ether);
         // a purchase moves the ceiling with its price
-        sellApeAt(nextApeId(), 7 ether);
+        sellCheckAt(nextCheckId(), 7 ether);
         assertEq(sys.vault.bidCeiling(), 8.4 ether);
         assertEq(sys.vault.activationThreshold(), 5.25 ether);
     }
@@ -253,7 +266,7 @@ contract BidForkTest is ForkBase {
         vm.expectRevert(Governed.OutOfBounds.selector);
         sys.vault.setBidParams(p);
         // a token can be refused (e.g. stolen)
-        uint256 id = nextApeId();
+        uint256 id = nextCheckId();
         govern(address(sys.vault), abi.encodeCall(FundingVault.setExcluded, (id, true)));
         address holder = IERC721Lite(cfg.collection).ownerOf(id);
         vm.startPrank(holder);
@@ -269,7 +282,7 @@ contract BidForkTest is ForkBase {
 contract FlowForkTest is ForkBase {
     /// The overflow is off at launch (D72); these tests exercise it at the 50% an owner may set.
     function setUp() public {
-        deployBayc();
+        deployChecksAt(6 ether);
         launchGame(6 ether);
         assertEq(sys.vault.overflowBps(), 0, "off at launch (D72)");
         govern(address(sys.vault), abi.encodeCall(FundingVault.setOverflowBps, (5_000)));
@@ -347,7 +360,7 @@ contract FlowForkTest is ForkBase {
     /// Before the game is active nothing overflows, however much the opening hour brings: that ETH is the first Ape's
     /// and the game's capital.
     function test_noOverflowBeforeActivation() public {
-        FundingVault v = new FundingVault(owner, cfg.poolManager, cfg.collection, address(sys.burner), address(0),
+        FundingVault v = new FundingVault(owner, cfg.poolManager, cfg.collection, address(0), address(sys.burner), address(0),
             sys.vault.bidParams(), 5_000, 6 ether, 10_000);
         v.wire(address(sys.game), address(sys.poolOwner), address(0));
         // the game before activation, no Ape held yet (the vault may then spend everything on the first one)
@@ -390,7 +403,7 @@ contract FlowForkTest is ForkBase {
 /// @dev Gas of a sweep that splits the fee overflow (DrawRouter gives `sweep` a fixed budget).
 contract FlowGasForkTest is ForkBase {
     function test_overflowSweepGas() public {
-        deployBayc();
+        deployChecksAt(6 ether);
         launchGame(6 ether);
         govern(address(sys.vault), abi.encodeCall(FundingVault.setOverflowBps, (5_000)));
         vm.roll(block.number + 300);
