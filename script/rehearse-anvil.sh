@@ -270,6 +270,8 @@ say "   buybacks (the keeper bot's buyback job, 0.05 ETH + 0.005 a draw + 1% of 
 say "   Checks held $(cast call "$POOL_OWNER" "heldCount()(uint256)" --rpc-url "$RPC"), prize backing $(cast call "$GAME" "inventoryBacking()(uint256)" --rpc-url "$RPC"), vault $(cast balance "$VAULT" --rpc-url "$RPC"), burner $(cast balance "$BURNER" --rpc-url "$RPC") (milestone reserve $(cast call "$BURNER" "reserve()(uint256)" --rpc-url "$RPC"))"
 
 say "9. postflight against the rehearsal deployment (before the migration)"
+# the overflow was turned on in step 8 only to exercise it: back to its launch value, which the postflight compares
+cast send "$VAULT" "setOverflowBps(uint256)" 0 --from "$ADMIN" --unlocked --rpc-url "$RPC" >>"$LOG" 2>&1
 set -a; source script/env/anvil.env; set +a
 DEPLOYER=$DEPLOYER forge script script/Postflight.s.sol:Postflight --sig "check()" --rpc-url "$RPC" >>"$LOG" 2>&1 \
   && say "   postflight passed (after launch and play)"
