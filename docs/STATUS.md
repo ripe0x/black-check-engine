@@ -27,10 +27,26 @@ Branch: `claude/wizardly-shannon-440owk`. The pre-rebase implementation is archi
   switches opened locally only: off on mainnet at this block).
 - R8 (a240060, 8a52cfb): keeper free-composition job (unit 9/9); site Checks page, typecheck and build pass (28 pages);
   rehearsal script converted (not yet run).
-- Evidence. Via-IR on 40599e6: build 33 min; sizes: pool owner 23,596 B (980 B headroom), game 22,392, vault 13,743,
-  token 10,959, hook 7,497, desk 6,932; suite 275/279, the 4 failures cached `block.*` reads under via-IR (C011),
-  fixed in 5d8db23. Fast profile on 5d8db23: 278/280 (only the via-IR size tests). Black formation from 64 real
-  singles 8,350,399 gas. Via-IR run of 5d8db23: in progress.
+- R9: independent security review (docs/review/rebase-security-review.md): C-1 (a composite sold at an 80-Check's
+  price in the sunset) and M-1 (buying back below the vault's purchase price) fixed in 0e02aab, L-2 fixed, L-1/L-3
+  recorded (D017). Slither triaged (docs/review/slither-rebase.md, nothing new to fix). Throughput study on the Checks
+  board 12/12 (sim/results/throughput.md). Founder review, audit scope and a sealed audit prompt written.
+- Evidence. Via-IR on 0e02aab: build 39 min; suite 283/283 (throughput studies run separately, 12/12); sizes under
+  EIP-170: pool owner 24,069 B (507 B headroom), game 22,392, vault 13,743, token 10,959, hook 7,497, desk 7,193,
+  MigrationAuthority 4,862, Sunset 2,387. Black formation from 64 real singles 8,350,399 gas.
+- Rehearsal (`script/rehearse-anvil.sh`, anvil chain 31337, fork of block 26,337,000) end to end on 0e02aab: deploy and
+  postflight, FWA fee relay and pool, market at the fixed tick, opening-hour trading (11.1 ETH of fees), the live bid
+  and a real 80-Check sold, keeper activation (160 prizes), router and FWA draws, board change, two more Checks bought,
+  fee overflow and a buyback, keeper pay 1.10-1.31x real gas, the fee recipient and the migration each through the
+  council's 7-day timelock then 72 hours (owner and strangers refused), capital handed over exactly. Follow-ups fixed
+  in 4cfd59a (the postflight script did not load the desk and council; the successor's Check count needs the win and
+  migration log); rerun in progress.
+
+## Next executable action
+1. Record the rehearsal rerun; then freeze an `rc3` candidate (tagging is the owner's call: rc1 and rc2 were pushed by
+   the owner).
+2. Before any launch: the gates in docs/FOUNDER_REVIEW.md (name, council keys, legal review, human audit, FWA V2
+   creation open on the day).
 
 ## History before the rebase
 
