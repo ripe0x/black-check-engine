@@ -21,15 +21,16 @@ Branch: `claude/wizardly-shannon-440owk`. The pre-rebase implementation is archi
 - R2-R5 (b54de86): fork block 26,337,000; council authority in Admin/Governed (D012); Checks pool owner (tiers,
   schedule, survival C010, decay D005, desk operations); ChecksDesk (composition D008, Black formation, ETH and coin
   buyouts D006); vault buys 80-Check Originals only, Editions via `sellEdition`, nothing above 120% of the 80 price.
-  Fast profile: 271/272 (size test only). Black formation from 64 real singles: 8,350,399 gas (cap margin 15,099,494).
-- via-IR full run: in progress (record here when done).
-
-## Next executable action
-1. Record the via-IR run (sizes, full suite) and comment on the PR.
-2. R6: coin market values from the model (D013): opening tick, fees, burner cadence, milestone on a Check win.
-3. R7: council timelock deployed for real (OZ TimelockController), MigrationAuthority proposer = council, hard bounds
-   on instant powers (keeper pay, markup floor), hostile-owner suite, real V2 to community-pool migration.
-4. R8: keeper, site, Lens, deploy and rehearsal for Checks. R9: delete leftovers, full verification, audit package.
+- R6-R7 (40599e6, 5d8db23): market values D016 (`sim/checks_market.py`); the council is a real OZ TimelockController
+  (Safe proposes, 7 days, guardian cancels); council-only value powers; owner bounds (markup >= 5%, keeper pay caps);
+  survival carried across a migration (`Nft.carried`); a real V2 -> community-pool migration test (community factory
+  switches opened locally only: off on mainnet at this block).
+- R8 (a240060, 8a52cfb): keeper free-composition job (unit 9/9); site Checks page, typecheck and build pass (28 pages);
+  rehearsal script converted (not yet run).
+- Evidence. Via-IR on 40599e6: build 33 min; sizes: pool owner 23,596 B (980 B headroom), game 22,392, vault 13,743,
+  token 10,959, hook 7,497, desk 6,932; suite 275/279, the 4 failures cached `block.*` reads under via-IR (C011),
+  fixed in 5d8db23. Fast profile on 5d8db23: 278/280 (only the via-IR size tests). Black formation from 64 real
+  singles 8,350,399 gas. Via-IR run of 5d8db23: in progress.
 
 ## History before the rebase
 

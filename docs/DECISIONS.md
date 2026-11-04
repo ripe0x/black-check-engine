@@ -421,5 +421,12 @@ Record important noncontroversial implementation choices with evidence and commi
   release to a buyer) that withdraw open, active listings only with nothing unsettled. Composition and buyout rules
   live in a separate immutable `ChecksDesk` (from rc2 `Engine`), which holds nothing.
 
+- C017 Survival carried across a migration (R7, 5d8db23): retirement records each withdrawn Check's survived draws in
+  `nfts(tokenId).carried`; a successor reads it (spec 7.3). Proven on a real community pool with a test-only
+  successor (test/fork/MigrationCommunity.t.sol); a production successor compiled for the community factory is a
+  follow-up, needed only if a migration is ever proposed.
+- C018 Via-IR clock reads in tests (5d8db23): rc2's C011 applies again; tests use `vm.getBlockTimestamp()` and
+  `vm.getBlockNumber()`. On 40599e6 four via-IR failures came only from this.
+
 ## FOUNDATIONAL COMMITMENTS
 Follow the constraints in CLAUDE.md. If a real technical constraint conflicts with one, document it and recommend the simplest alternative while advancing independent work.
