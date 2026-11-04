@@ -312,7 +312,7 @@ Importance: Medium
   (exact signed consideration count, no item paying the vault or custody, CONTRACT orders refused). Rounds 4-8 found
   nothing new in it. Still open there, attempted but not proven safe: ERC-1271, zone and conduit orders with a hostile
   callback. For Checks it fills one order at or below the tier's standing bid less the finder fee; the Check must
-  reach custody in the same call; its tier is read on-chain from Checks; only revealed Originals at scheduled tiers.
+  reach custody in the same call; its tier is read on-chain from Checks; 80-Check Originals (revealed or not; tier is fixed at mint) at scheduled tiers.
   It sits alongside D007's standing bid and does not replace it.
 - Sunset: adopted as the built-in end state. Every Check is auctioned in a Dutch auction from 150% of its schedule
   price down to 25% over 30 days; every wei goes to buy-and-burn; the owner can trigger it at once and it is final
@@ -348,6 +348,21 @@ Tradeoff: a thin opening market (about 30 ETH of depth) in exchange for buybacks
 opening valuation in dollars moves with ETH until launch.
 Reversibility: tick and curve immutable at deployment; fee, cadence and tiers are bounded settings.
 Owner action: Optional review before deployment.
+
+### D017: Independent review of the rebase (C-1, M-1 fixed; L-1, L-3 accepted)
+Status: APPROVED by the implementer under its authority (fixes are bugs; the accepted items are recorded for review)
+Importance: High
+Evidence: docs/review/rebase-security-review.md.
+- C-1 fixed: composition carries the inputs' cost; the Sunset prices from max(recorded cost, schedule).
+- M-1 fixed: ETH buyout markup at least 25% (was 10%), priced from max(schedule, recorded cost).
+- L-2 fixed: a Check that left by a win or buyout can come back as a new arrival.
+- L-1 accepted: past the grace the caller may choose which eligible Checks to pair (and which 64 singles), keep/burn
+  within the pair being deterministic; the keeper's fallback pairs the longest survivors. A choice of art (swap, or
+  keeping the shorter survivor) still costs coin, which the owner sets (it can set it to zero: a pace setting, no value
+  moves).
+- L-3 corrected in the spec: unrevealed Originals are accepted and listed (tier is fixed at mint; reveal follows by
+  epoch); Checks enforces its own rules at composition.
+Owner action: Optional review of L-1 (whether the free pairing should be canonical on-chain).
 
 Use this template:
 

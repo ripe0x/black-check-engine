@@ -7,6 +7,8 @@ import {IChecksOriginals} from "../../src/interfaces/IChecks.sol";
 import {CollectionPoolOwner} from "../../src/core/CollectionPoolOwner.sol";
 import {ChecksDesk} from "../../src/checks/ChecksDesk.sol";
 import {Governed} from "../../src/core/Governed.sol";
+import {MigrationAuthority} from "../../src/migration/MigrationAuthority.sol";
+import {FundingVault} from "../../src/core/FundingVault.sol";
 
 /// @notice The Checks desk on real Checks and the real FWA pool: composition with a coin burn for a free choice and a
 ///         free deterministic outcome after the grace (D008), eligibility from survival (D002), Black Check formation
@@ -229,8 +231,8 @@ contract DeskForkTest is ForkBase {
         sys.desk.buyWithCoin(id);
         assertEq(checks.ownerOf(tokenId), alice);
         assertEq(sys.token.totalSupply(), supply - 5_000 ether, "every coin paid is burned");
-        // the ETH markup can never go below 10% (D012)
-        b.ethMarkupBps = 999;
+        // the ETH markup can never go below 25%: above the vault's 120%-of-schedule purchase cap (review M-1)
+        b.ethMarkupBps = 2_499;
         vm.prank(council);
         vm.expectRevert(Governed.OutOfBounds.selector);
         sys.desk.setBuyoutParams(b);
@@ -300,6 +302,65 @@ contract DeskForkTest is ForkBase {
         l[0] = sys.poolOwner.listedAt(0); // an 80, not a single
         vm.expectRevert(ChecksDesk.NotEligible.selector);
         sys.desk.formBlack(l);
+    }
+
+    // ------------------------------------------------------------------ independent review fixes
+
+    /// Review C-1: a composite carries its inputs' cost, and the sunset never sells it at an 80-Check's price.
+    function test_sunsetSellsACompositeAtItsValue() public {
+        (uint256 a, uint256 b) = _twoEligible();
+        (uint256 ta,,) = sys.desk.listingInfo(a);
+        (uint128 ra,,,,,) = sys.poolOwner.nfts(ta);
+        (uint256 tb,,) = sys.desk.listingInfo(b);
+        (uint128 rb,,,,,) = sys.poolOwner.nfts(tb);
+        _coin(alice, 1_000 ether);
+        vm.prank(alice);
+        sys.desk.compose(a, b, true);
+        (uint128 rk,,,,,) = sys.poolOwner.nfts(ta);
+        assertEq(rk, uint256(ra) + rb, "the survivor carries both costs");
+        govern(address(sys.migration), abi.encodeCall(MigrationAuthority.sunset, ()));
+        for (uint256 i; i < 40 && !sys.game.retired(); ++i) {
+            vm.prank(keeper);
+            sys.game.retireStep();
+        }
+        assertTrue(sys.game.retired());
+        sys.migration.migrateApes(10);
+        assertEq(checks.ownerOf(ta), address(sys.sunset));
+        uint256 value = cfg.schedule[1] > rk ? cfg.schedule[1] : rk;
+        assertEq(sys.sunset.auctionPrice(ta), value * 15_000 / 10_000, "150% of a 40's value, not an 80's");
+    }
+
+    /// Review M-1: a Check the vault bought at its 120% cap can never be bought back from the desk for less.
+    function test_buyoutNeverBelowWhatTheVaultPaid() public {
+        FundingVault.BidParams memory p = sys.vault.bidParams();
+        p.ceilingBps = 0;
+        p.maxSweepWei = 100 ether;
+        govern(address(sys.vault), abi.encodeCall(FundingVault.setBidParams, (p)));
+        accrueFees(5 ether);
+        riseBidTo(1 ether);
+        uint256 cap = cfg.schedule[0] * 12_000 / 10_000;
+        uint256 id = nextCheckId();
+        sellCheckAt(id, cap);
+        window();
+        syncAll();
+        uint256 listing = _listingOf(id);
+        assertGe(sys.desk.ethPrice(listing), cap * 12_500 / 10_000, "at least the price paid + 25%");
+    }
+
+    /// Review L-2: a Check bought out (or won) can come back to the vault later as a new arrival.
+    function test_aCheckThatLeftCanComeBack() public {
+        uint256 listing = sys.poolOwner.listedAt(0);
+        (uint256 tokenId,,) = sys.desk.listingInfo(listing);
+        uint256 price = sys.desk.ethPrice(listing);
+        vm.deal(alice, price);
+        vm.prank(alice);
+        sys.desk.buyWithEth{value: price}(listing);
+        assertEq(checks.ownerOf(tokenId), alice);
+        vm.startPrank(alice);
+        IERC721Lite(cfg.collection).setApprovalForAll(address(sys.vault), true);
+        sys.vault.contributeNFT(tokenId);
+        vm.stopPrank();
+        assertEq(uint8(_state(tokenId)), uint8(CollectionPoolOwner.NftState.Custody), "registered again");
     }
 
     function _state(uint256 tokenId) internal view returns (CollectionPoolOwner.NftState s) {

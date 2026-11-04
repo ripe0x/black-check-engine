@@ -355,9 +355,13 @@ contract CollectionPoolOwner is IPurchaseOperator, ReentrancyGuard, Governed {
     ///         recorded at (accounting and the sunset's floor); `cashCost` what the protocol paid (0 for a donation).
     function register(uint256 tokenId, uint256 refCost, uint256 cashCost, uint8 source) external {
         if (msg.sender != vault) revert NotVault();
-        if (IERC721Min(collection).ownerOf(tokenId) != address(this) || nfts[tokenId].state != NftState.None) {
-            revert NotCustody();
-        }
+        NftState prior = nfts[tokenId].state;
+        // a Check that left by a win or a buyout may come back later as a new arrival (review L-2); one in custody,
+        // listed, burned or migrated may not
+        if (
+            IERC721Min(collection).ownerOf(tokenId) != address(this)
+                || (prior != NftState.None && prior != NftState.Won && prior != NftState.Sold)
+        ) revert NotCustody();
         if (refCost == 0 || refCost > type(uint128).max || source > 1) revert OutOfBounds();
         // a reference this small would round the minimum notional to zero and make every exposure term divide by it:
         // lift it (the cash cost stays what was paid; an NFT bought or valued that cheaply is never refused)
@@ -821,6 +825,8 @@ contract CollectionPoolOwner is IPurchaseOperator, ReentrancyGuard, Governed {
         uint256[] memory t = _take(ids);
         (keep, burned) = (t[0], t[1]);
         IChecksOriginals(collection).composite(keep, burned, swap); // same tier <= 5, distinct, owned here
+        // the survivor carries both inputs' recorded cost (review C-1: the sunset auction and accounting read it)
+        _absorb(nfts[keep], nfts[burned]);
         nfts[burned].state = NftState.Burned;
         ++burnedCount;
         uint8 tier = nfts[keep].tier + 1;
@@ -835,6 +841,7 @@ contract CollectionPoolOwner is IPurchaseOperator, ReentrancyGuard, Governed {
         uint256[] memory t = _take(listingIds);
         IChecksOriginals(collection).infinity(t); // exactly 64 singles owned here
         for (uint256 i = 1; i < t.length; ++i) {
+            _absorb(nfts[t[0]], nfts[t[i]]);
             nfts[t[i]].state = NftState.Burned;
         }
         burnedCount += t.length - 1;
@@ -842,6 +849,14 @@ contract CollectionPoolOwner is IPurchaseOperator, ReentrancyGuard, Governed {
         nfts[black].tier = BLACK;
         _toCustody(black);
         emit BlackFormed(black);
+    }
+
+    /// @dev The survivor of a composition takes on the burned Check's recorded and cash cost.
+    function _absorb(Nft storage keep, Nft storage gone) internal {
+        uint256 r = uint256(keep.refCost) + gone.refCost;
+        uint256 c = uint256(keep.cashCost) + gone.cashCost;
+        keep.refCost = uint128(r > type(uint128).max ? type(uint128).max : r);
+        keep.cashCost = uint128(c > type(uint128).max ? type(uint128).max : c);
     }
 
     /// @notice Releases one listed Check to `to`, who has paid the desk for it. The desk only.

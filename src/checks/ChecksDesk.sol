@@ -6,6 +6,10 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {Governed} from "../core/Governed.sol";
 
 interface IPoolOwnerDesk {
+    function nfts(uint256 tokenId)
+        external
+        view
+        returns (uint128 refCost, uint128 cashCost, uint8 tier, uint8 source, uint8 state, uint32 carried);
     function cListings(uint256 listingId)
         external
         view
@@ -52,8 +56,10 @@ contract ChecksDesk is ReentrancyGuard, Governed {
     uint256 internal constant BPS = 10_000;
     uint8 internal constant SINGLE = 6;
     uint8 internal constant BLACK = 7;
-    /// @notice The lowest ETH buyout markup the council may set (D012: no buyout below schedule + 10%).
-    uint256 public constant MIN_ETH_MARKUP_BPS = 1_000;
+    /// @notice The lowest ETH buyout markup the council may set: above the vault's 120%-of-schedule purchase cap
+    ///         (FundingVault.MAX_PRICE_OF_SCHEDULE_BPS) with a margin, so a Check sold to the vault can never be bought
+    ///         back for less (review M-1).
+    uint256 public constant MIN_ETH_MARKUP_BPS = 2_500;
     uint256 public constant MAX_ETH_MARKUP_BPS = 100_000;
     uint256 public constant MAX_DRAWS = 1_000_000;
 
@@ -173,12 +179,15 @@ contract ChecksDesk is ReentrancyGuard, Governed {
 
     // ------------------------------------------------------------------ buyouts
 
-    /// @notice ETH price of the Check in `listingId` now: its tier's schedule price plus the markup.
+    /// @notice ETH price of the Check in `listingId` now: the higher of its tier's schedule price and its recorded
+    ///         cost, plus the markup (never below what the protocol paid for it, review M-1).
     function ethPrice(uint256 listingId) public view returns (uint256) {
-        (, uint8 tier,) = listingInfo(listingId);
+        (uint256 tokenId, uint8 tier,) = listingInfo(listingId);
         if (tier == type(uint8).max) revert NotEligible();
         uint256 s = poolOwner.scheduleOf(tier);
         if (s == 0) revert Disabled();
+        (uint128 cost,,,,,) = poolOwner.nfts(tokenId);
+        if (cost > s) s = cost;
         return s * (BPS + _bp.ethMarkupBps) / BPS;
     }
 
