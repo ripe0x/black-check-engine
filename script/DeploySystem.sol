@@ -484,8 +484,8 @@ abstract contract DeploySystem {
         _check(t.hasRole(t.PROPOSER_ROLE(), c.councilSafe) && !t.hasRole(t.PROPOSER_ROLE(), c.owner), "council proposer");
         _check(t.hasRole(t.CANCELLER_ROLE(), c.guardian) && t.hasRole(t.EXECUTOR_ROLE(), address(0)), "council roles");
         _check(
-            !t.hasRole(t.DEFAULT_ADMIN_ROLE(), deployer) && !t.hasRole(t.DEFAULT_ADMIN_ROLE(), address(this))
-                && !t.hasRole(t.DEFAULT_ADMIN_ROLE(), c.owner) && t.hasRole(t.DEFAULT_ADMIN_ROLE(), address(t)),
+            !t.hasRole(t.DEFAULT_ADMIN_ROLE(), deployer) && !t.hasRole(t.DEFAULT_ADMIN_ROLE(), c.owner)
+                && t.hasRole(t.DEFAULT_ADMIN_ROLE(), address(t)),
             "council admin"
         );
     }

@@ -22,8 +22,9 @@ export PATH="$HOME/.foundry/bin:$PATH"
 FORK_URL="${FORK_URL:-https://mainnet.gateway.tenderly.co}"
 FORK_BLOCK="${FORK_BLOCK:-26337000}" # after FWA reopened V2 pool creation (D014)
 PORT="${PORT:-8546}"
-# 1 keeps mainnet's chain id (the rehearsal); 31337 is a local dev chain the site will sign on (script/local.sh)
-CHAIN_ID="${CHAIN_ID:-1}"
+# anvil's own chain id: the deploy refuses chain 1 without the owner's I_AM_THE_OWNER=yes and DEPLOY_ENV=mainnet
+# (collection-games D81, D85), so a local fork never passes for mainnet. The fork's contracts and state are mainnet's.
+CHAIN_ID="${CHAIN_ID:-31337}"
 RPC="http://127.0.0.1:${PORT}"
 # anvil's published test keys (not secrets; only valid on local nodes)
 DEPLOYER_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
