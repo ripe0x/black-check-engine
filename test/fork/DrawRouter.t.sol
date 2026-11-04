@@ -60,7 +60,7 @@ contract DrawRouterForkTest is ForkBase {
             0,
             1_000,
             version,
-            block.timestamp + 1 hours
+            vm.getBlockTimestamp() + 1 hours
         );
         emit log_named_uint("router draw gas", g - gasleft());
     }
@@ -74,14 +74,14 @@ contract DrawRouterForkTest is ForkBase {
         for (uint256 i; i < k; ++i) {
             r[i] = pull(bob);
         }
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         for (uint256 i = k - 1; i >= 1; --i) {
             deliverWord(r[i], uint256(keccak256(abi.encode(i)))); // not the head: cached, not settled
         }
         deliverWord(r[0], 1); // the head: the callback settles it, and only it
         assertEq(pool.unsettledAcquisitionCount(), k - 1, "the rest Ready, unsettled");
         uint256 late = pull(alice); // the gate still admits one more
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(late, 2); // not the head
         assertEq(pool.unsettledAcquisitionCount(), k);
         assertFalse(sys.poolOwner.canPurchase(alice), "in-flight limit reached");
@@ -90,7 +90,7 @@ contract DrawRouterForkTest is ForkBase {
         vm.deal(alice, alice.balance + total);
         vm.prank(alice);
         vm.expectRevert();
-        pool.acquire{value: total}(alice, fee, 0, 10_000, version, block.timestamp + 1 hours);
+        pool.acquire{value: total}(alice, fee, 0, 10_000, version, vm.getBlockTimestamp() + 1 hours);
 
         uint256 tipsBefore = sys.game.keeperPaid();
         (uint256[] memory ids, uint256 spent, uint256 quoted) = _routerDraw(alice, 10, 1);
@@ -117,7 +117,7 @@ contract DrawRouterForkTest is ForkBase {
         (uint256[] memory two, uint256 spent, uint256 quoted) = _routerDraw(alice, 0, 2);
         assertEq(two.length, 2);
         assertEq(spent, quoted);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(one[0], wordFor(0.01 ether));
         deliverWord(two[0], wordFor(0.01 ether));
         deliverWord(two[1], wordFor(0.01 ether));
@@ -144,7 +144,7 @@ contract DrawRouterForkTest is ForkBase {
         uint256 rewardsBefore = sys.vault.sweepRewards();
         uint256 contributedBefore = sys.vault.contributions();
         uint256 bidBefore = sys.vault.bidBalance();
-        vm.warp(block.timestamp + 1 hours);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
         vm.fee(1 gwei);
         vm.txGasPrice(1 gwei);
         (, uint256 spent, uint256 quoted) = _routerDraw(alice, 10, 10, 1);
@@ -161,7 +161,7 @@ contract DrawRouterForkTest is ForkBase {
         uint256 before = alice.balance;
         vm.prank(alice);
         uint256[] memory none =
-            sys.drawRouter.draw{value: 1 ether}(pool, IGameSync(address(sys.game)), 10, 10, 5_000_000, 0, 0, 0, 0, 0, block.timestamp);
+            sys.drawRouter.draw{value: 1 ether}(pool, IGameSync(address(sys.game)), 10, 10, 5_000_000, 0, 0, 0, 0, 0, vm.getBlockTimestamp());
         assertEq(none.length, 0);
         assertGe(alice.balance, before, "nothing kept");
     }
@@ -173,7 +173,7 @@ contract DrawRouterForkTest is ForkBase {
             pullAndSettle(bob, uint256(keccak256(abi.encode("left", i))));
         }
         _routerDraw(alice, 10, 10, 1);
-        assertEq(sys.game.lastUpkeepAt(), block.timestamp, "the draw's upkeep did work");
+        assertEq(sys.game.lastUpkeepAt(), vm.getBlockTimestamp(), "the draw's upkeep did work");
         for (uint256 i; i < 2; ++i) {
             pullAndSettle(bob, uint256(keccak256(abi.encode("left2", i))));
         }
@@ -214,7 +214,7 @@ contract DrawRouterForkTest is ForkBase {
         assertGt(used, 700_000, "booking and replacing two prizes");
         assertLt(used, 2_500_000, "within the site's limit for a player's upkeep");
         _upkeepGas = used * 13 / 10 + 50_000;
-        vm.warp(block.timestamp + 1 hours); // the hourly flat fee is due
+        vm.warp(vm.getBlockTimestamp() + 1 hours); // the hourly flat fee is due
         vm.txGasPrice(1 gwei);
         uint256 seen = sys.game.seenSeq();
         uint256 tips = sys.game.keeperPaid();
@@ -224,7 +224,7 @@ contract DrawRouterForkTest is ForkBase {
         assertGt(sys.game.seenSeq(), seen, "the player's draw booked the settled draws");
         assertEq(sys.game.keeperPaid(), tips, "and was not paid for it (D77)");
         assertLt(drawGas, 700_000 + used, "at most the purchase plus the measured upkeep");
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(ids[0], wordFor(0.01 ether));
         syncAll();
         assertEq(sys.game.liveCount(), sys.game.boardSize(), "replacements listed once nothing is in flight");
@@ -257,7 +257,7 @@ contract DrawRouterForkTest is ForkBase {
         // so it fits the budget; were it over, it would fail as a whole and leave the work for later
         assertGt(sys.game.seenSeq(), seen, "the upkeep booked the settled draws");
         assertEq(sys.game.liveCount(), live - 20, "and listed nothing over the draw in flight");
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(ids[0], wordFor(0.01 ether));
         restockAll(); // keepers do it, a batch per maintenance window
         assertGt(sys.game.seenSeq(), seen + 20);
@@ -274,7 +274,7 @@ contract DrawRouterForkTest is ForkBase {
         vm.prank(alice);
         vm.expectRevert(DrawRouter.UpkeepGas.selector);
         sys.drawRouter.draw{value: total, gas: 2_000_000}(
-            pool, IGameSync(address(sys.game)), 0, 10, 2_500_000, 1, fee, 0, 1_000, version, block.timestamp + 1 hours
+            pool, IGameSync(address(sys.game)), 0, 10, 2_500_000, 1, fee, 0, 1_000, version, vm.getBlockTimestamp() + 1 hours
         );
     }
 
@@ -287,7 +287,7 @@ contract DrawRouterForkTest is ForkBase {
         vm.prank(alice);
         vm.expectRevert();
         sys.drawRouter.draw{value: total}(
-            pool, IGameSync(address(sys.game)), 0, 0, 0, 1, fee, 0, 1_000, version + 1, block.timestamp + 1 hours
+            pool, IGameSync(address(sys.game)), 0, 0, 0, 1, fee, 0, 1_000, version + 1, vm.getBlockTimestamp() + 1 hours
         );
         // a paused game closes FWA purchases: the router cannot open them
         vm.prank(owner);
@@ -296,7 +296,7 @@ contract DrawRouterForkTest is ForkBase {
         vm.prank(alice);
         vm.expectRevert();
         sys.drawRouter.draw{value: total}(
-            pool, IGameSync(address(sys.game)), 10, 10, 5_000_000, 1, fee, 0, 1_000, version, block.timestamp + 1 hours
+            pool, IGameSync(address(sys.game)), 10, 10, 5_000_000, 1, fee, 0, 1_000, version, vm.getBlockTimestamp() + 1 hours
         );
     }
 
@@ -309,7 +309,7 @@ contract DrawRouterForkTest is ForkBase {
         vm.prank(alice);
         vm.expectRevert(DrawRouter.WrongPool.selector);
         sys.drawRouter.draw{value: total}(
-            IFWAPool(makeAddr("fakePool")), IGameSync(address(sys.game)), 0, 0, 0, 1, fee, 0, 1_000, version, block.timestamp + 1 hours
+            IFWAPool(makeAddr("fakePool")), IGameSync(address(sys.game)), 0, 0, 0, 1, fee, 0, 1_000, version, vm.getBlockTimestamp() + 1 hours
         );
         assertEq(alice.balance, total);
     }
@@ -339,7 +339,7 @@ contract DrawRouterForkTest is ForkBase {
 
     function _params(uint256 count, uint256 fee) internal view returns (DrawRouter.DrawParams memory) {
         return DrawRouter.DrawParams(
-            pool, IGameSync(address(sys.game)), 0, 0, 0, count, fee, 0, 1_000, pool.inventoryVersion(), block.timestamp + 1 hours
+            pool, IGameSync(address(sys.game)), 0, 0, 0, count, fee, 0, 1_000, pool.inventoryVersion(), vm.getBlockTimestamp() + 1 hours
         );
     }
 
@@ -509,7 +509,7 @@ contract DrawRouterForkTest is ForkBase {
         vm.deal(alice, 1 ether);
         vm.prank(alice);
         vm.expectRevert(DrawRouter.WrongGame.selector);
-        sys.drawRouter.draw{value: 1 ether}(IFWAPool(fakePool), IGameSync(address(fake)), 0, 0, 0, 1, 1 ether, 0, 1_000, 0, block.timestamp + 1 hours);
+        sys.drawRouter.draw{value: 1 ether}(IFWAPool(fakePool), IGameSync(address(fake)), 0, 0, 0, 1, 1 ether, 0, 1_000, 0, vm.getBlockTimestamp() + 1 hours);
         assertEq(fakePool.balance, 0);
     }
 }

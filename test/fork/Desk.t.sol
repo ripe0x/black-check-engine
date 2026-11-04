@@ -75,7 +75,7 @@ contract DeskForkTest is ForkBase {
                 syncAll();
             }
             uint256 r = pull(bob);
-            vm.roll(block.number + 3);
+            vm.roll(vm.getBlockNumber() + 3);
             deliverWord(r, wordFor(0));
             pool.processAcquisitions(10);
         }
@@ -175,7 +175,7 @@ contract DeskForkTest is ForkBase {
         vm.expectRevert(CollectionPoolOwner.Busy.selector);
         sys.desk.compose(a, b, true);
         assertEq(sys.token.totalSupply(), supply, "nothing burned");
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, wordFor(0));
         pool.processAcquisitions(10);
         // a canonical failure (here forced) reverts everything, the coin burn included
@@ -303,6 +303,6 @@ contract DeskForkTest is ForkBase {
     }
 
     function _state(uint256 tokenId) internal view returns (CollectionPoolOwner.NftState s) {
-        (,,,, s) = sys.poolOwner.nfts(tokenId);
+        (,,,, s,) = sys.poolOwner.nfts(tokenId);
     }
 }

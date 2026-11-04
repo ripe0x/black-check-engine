@@ -31,7 +31,7 @@ contract GasForkTest is ForkBase {
     /// @dev A Pack won, booked and replaced with a new Pack; the winner redeems or opens Packs.
     function _measurePacks() internal {
         uint256 rp = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(rp, wordFor(0.03 ether));
         pool.processAcquisitions(10);
         (,,, uint256 packListing,) = pool.acquisitions(rp);
@@ -46,7 +46,7 @@ contract GasForkTest is ForkBase {
         IPacksView(sys.packs).redeem(packId);
         _g("player_redeem_pack_of_3", g - gasleft());
         uint256 rq = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(rq, wordFor(0.02 ether));
         pool.processAcquisitions(10);
         (,,, uint256 packListing2,) = pool.acquisitions(rq);
@@ -57,7 +57,7 @@ contract GasForkTest is ForkBase {
         sys.game.sync();
         _g("sync_book_1_and_replace_1_pack_of_2", g - gasleft());
         uint256 rs = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(rs, wordFor(0.01 ether));
         pool.processAcquisitions(10);
         window();
@@ -110,9 +110,9 @@ contract GasForkTest is ForkBase {
         vm.deal(alice, 10 ether);
         g = gasleft();
         vm.prank(alice);
-        uint256 r = pool.acquire{value: total}(alice, fee, 0, 10_000, v, block.timestamp + 1 hours);
+        uint256 r = pool.acquire{value: total}(alice, fee, 0, 10_000, v, vm.getBlockTimestamp() + 1 hours);
         _g("player_acquire", g - gasleft());
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, wordFor(0.05 ether));
         pool.processAcquisitions(10);
         g = gasleft();
@@ -153,7 +153,7 @@ contract GasForkTest is ForkBase {
 
         // collection win booked + milestone release + promotion attempt
         uint256 r2 = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r2, wordFor(type(uint256).max));
         pool.processAcquisitions(10);
         g = gasleft();
@@ -162,8 +162,8 @@ contract GasForkTest is ForkBase {
         _g("sync_collection_win_and_milestone_release", g - gasleft());
 
         // a buyback slice of the released reserve
-        vm.warp(block.timestamp + 2 hours);
-        vm.roll(block.number + 1);
+        vm.warp(vm.getBlockTimestamp() + 2 hours);
+        vm.roll(vm.getBlockNumber() + 1);
         g = gasleft();
         vm.prank(keeper);
         sys.burner.process(0);
@@ -177,7 +177,7 @@ contract GasForkTest is ForkBase {
             g = gasleft();
             vm.prank(alice);
             sys.drawRouter.draw{value: t2}(
-                pool, IGameSync(address(sys.game)), 10, 0, 0, 1, f2, 0, 10_000, v2, block.timestamp + 1 hours
+                pool, IGameSync(address(sys.game)), 10, 0, 0, 1, f2, 0, 10_000, v2, vm.getBlockTimestamp() + 1 hours
             );
             _g("player_router_draw", g - gasleft());
         }

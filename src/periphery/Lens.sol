@@ -62,7 +62,10 @@ interface ILensPoolOwner {
     function listingParams() external view returns (uint256, uint256, uint256, uint256, uint256 targetBps);
     function openCollection() external view returns (uint256);
     function rowsShort() external view returns (uint256);
-    function nfts(uint256 tokenId) external view returns (uint128 refCost, uint128 cashCost, uint128, uint8, uint8);
+    function nfts(uint256 tokenId)
+        external
+        view
+        returns (uint128 refCost, uint128 cashCost, uint8 tier, uint8 source, uint8 state, uint32 carried);
     function heldCount() external view returns (uint256);
 }
 
@@ -261,7 +264,7 @@ contract Lens {
             (Prize memory pr, bool active) = _listing(p, id, total);
             if (!active) continue;
             pr.collection = true;
-            (pr.refCost,,,,) = o.nfts(pr.tokenId);
+            (pr.refCost,,,,,) = o.nfts(pr.tokenId);
             out[k++] = pr;
         }
         assembly ("memory-safe") {

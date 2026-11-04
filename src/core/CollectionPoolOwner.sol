@@ -178,6 +178,7 @@ contract CollectionPoolOwner is IPurchaseOperator, ReentrancyGuard, Governed {
         uint8 tier; // Checks `divisorIndex`, updated by composition
         uint8 source;
         NftState state;
+        uint32 carried; // draws survived in the episode that retirement ended: a successor carries it (spec 7.3)
     }
 
     /// @notice A Check listing (one survival episode).
@@ -366,7 +367,7 @@ contract CollectionPoolOwner is IPurchaseOperator, ReentrancyGuard, Governed {
         if (source == 1 && tier != 0 && _schedule[tier] > refCost && _schedule[tier] <= type(uint128).max) {
             refCost = _schedule[tier];
         }
-        nfts[tokenId] = Nft(uint128(refCost), uint128(cashCost), tier, source, NftState.Custody);
+        nfts[tokenId] = Nft(uint128(refCost), uint128(cashCost), tier, source, NftState.Custody, 0);
         _toCustody(tokenId);
         ++registeredCount;
         emit Registered(tokenId, refCost, cashCost, source);
@@ -972,7 +973,10 @@ contract CollectionPoolOwner is IPurchaseOperator, ReentrancyGuard, Governed {
             IFWAPool.ListingStatus st = _status(id);
             if (st != IFWAPool.ListingStatus.Active && st != IFWAPool.ListingStatus.Staged) continue;
             ids[n++] = id;
-            _toCustody(cListings[id].tokenId);
+            uint256 tokenId = cListings[id].tokenId;
+            // the survival it earned travels with it: a successor reads `nfts(tokenId).carried` (spec 7.3, D012)
+            if (st == IFWAPool.ListingStatus.Active) nfts[tokenId].carried = uint32(allocated() - cListings[id].entry);
+            _toCustody(tokenId);
             _close(id);
         }
         left = i;

@@ -254,17 +254,17 @@ contract UnitsTest is Test {
         assertEq(b.reserve(), 5.1 ether);
         // an Ape exit: 60% of what is left
         assertEq(b.release(7), 3.06 ether);
-        assertEq(b.lastExitAt(), block.timestamp);
+        assertEq(b.lastExitAt(), vm.getBlockTimestamp());
         vm.expectRevert(CollectionBurner.AlreadyReleased.selector);
         b.release(7);
         // a second Ape exit within 24 hours: the rest
-        vm.warp(block.timestamp + 23 hours);
+        vm.warp(vm.getBlockTimestamp() + 23 hours);
         assertEq(b.release(6), 2.04 ether);
         assertEq(b.reserve(), 0);
         assertEq(b.milestoneBalance(), 6 ether, "everything released ends in buybacks");
         // a later exit, past the window, is a first exit again
         game.send{value: 4 ether}(address(b));
-        vm.warp(block.timestamp + 25 hours);
+        vm.warp(vm.getBlockTimestamp() + 25 hours);
         assertEq(b.release(5), 1.8 ether, "60% of 3 ETH");
         // retirement: the rest
         vm.expectRevert(CollectionBurner.NotRetired.selector);

@@ -8,7 +8,9 @@ import {Test} from "forge-std/Test.sol";
 ///         is pinned so that any growth is deliberate and reviewed (docs/AUDIT_SCOPE.md).
 contract SizesTest is Test {
     uint256 internal constant EIP170 = 24_576;
-    uint256 internal constant GAME_PINNED = 24_536; // D85: one booking budget, upkeep capped (+35 B; 40 B under EIP-170)
+    /// @dev Via-IR (C015) on 40599e6: 22,392 B, with the markup floor and keeper caps of D012 (collection-games pinned
+    ///      24,536 B without IR). Measured under the default profile only; the fast profile does not build with IR.
+    uint256 internal constant GAME_PINNED = 22_392;
 
     function test_gameLedgerSizePinned() public view {
         assertLe(vm.getDeployedCode("CollectionGame.sol:CollectionGame").length, GAME_PINNED, "CollectionGame grew");

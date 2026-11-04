@@ -75,7 +75,7 @@ contract Handler is Test {
         uint256 version = pool.inventoryVersion();
         vm.deal(purchaser, purchaser.balance + total * count);
         vm.prank(purchaser);
-        try pool.acquireBatch{value: total * count}(purchaser, count, fee, 0, 10_000, version, block.timestamp + 1 hours)
+        try pool.acquireBatch{value: total * count}(purchaser, count, fee, 0, 10_000, version, vm.getBlockTimestamp() + 1 hours)
         returns (uint256[] memory ids) {
             for (uint256 i; i < ids.length; ++i) {
                 pending.push(ids[i]);
@@ -90,7 +90,7 @@ contract Handler is Test {
         uint256 id = pending[i];
         pending[i] = pending[pending.length - 1];
         pending.pop();
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         uint256[] memory words = new uint256[](1);
         words[0] = word;
         vm.prank(IVrf(VRF_SERVICE).s_vrfCoordinator());
@@ -100,7 +100,7 @@ contract Handler is Test {
     }
 
     function timeout() external {
-        vm.roll(block.number + 40);
+        vm.roll(vm.getBlockNumber() + 40);
         try pool.processAcquisitions(10) {} catch {}
         delete pending;
         _track();
@@ -113,7 +113,7 @@ contract Handler is Test {
     }
 
     function window() external {
-        vm.warp(block.timestamp + 31 minutes);
+        vm.warp(vm.getBlockTimestamp() + 31 minutes);
         _track();
     }
 
@@ -151,8 +151,8 @@ contract Handler is Test {
         if (holder == address(s.poolOwner) || holder.code.length != 0) return;
         // a day of sweeps meters fees into the live bid; then the holder takes the whole bid
         for (uint256 i; i < 72; ++i) {
-            vm.roll(block.number + 300);
-            vm.warp(block.timestamp + 1 hours);
+            vm.roll(vm.getBlockNumber() + 300);
+            vm.warp(vm.getBlockTimestamp() + 1 hours);
             try s.vault.sweep() {} catch {}
         }
         uint256 bid = s.vault.liveBid();
@@ -164,14 +164,14 @@ contract Handler is Test {
     }
 
     function sweep() external {
-        vm.roll(block.number + 300);
+        vm.roll(vm.getBlockNumber() + 300);
         try s.vault.sweep() {} catch {}
         _track();
     }
 
     function buyback() external {
-        vm.warp(block.timestamp + 1 hours);
-        vm.roll(block.number + 1);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
+        vm.roll(vm.getBlockNumber() + 1);
         try s.burner.process(0) {} catch {}
         _track();
     }

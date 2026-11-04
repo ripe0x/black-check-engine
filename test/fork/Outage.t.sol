@@ -26,7 +26,7 @@ contract OutageForkTest is ForkBase {
         uint256 version = pool.inventoryVersion();
         vm.deal(who, who.balance + total);
         vm.prank(who);
-        ids = pool.acquireBatch{value: total}(who, count, fee, 0, 10_000, version, block.timestamp + 1 hours);
+        ids = pool.acquireBatch{value: total}(who, count, fee, 0, 10_000, version, vm.getBlockTimestamp() + 1 hours);
     }
 
     /// @dev What the gate promises at every point of an outage: collection exposure at the live listing count is
@@ -60,9 +60,9 @@ contract OutageForkTest is ForkBase {
         vm.deal(bob, total);
         vm.prank(bob);
         vm.expectRevert(PurchaseNotAllowed.selector);
-        pool.acquire{value: total}(bob, fee, 0, 10_000, version, block.timestamp + 1 hours);
+        pool.acquire{value: total}(bob, fee, 0, 10_000, version, vm.getBlockTimestamp() + 1 hours);
         // days later a keeper returns
-        vm.warp(block.timestamp + 5 days);
+        vm.warp(vm.getBlockTimestamp() + 5 days);
         syncAll();
         window();
         syncAll();
@@ -87,7 +87,7 @@ contract OutageForkTest is ForkBase {
             singles[i] = pull(alice);
         }
         assertTrue(sys.poolOwner.canPurchase(bob), "k - 1 unsettled: still admitted");
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         if (k - 1 + 5 > 10) {
             // FWA's VRF layer allows 10 requests awaiting a word per pool: the batch reverts there, before any fee
             (uint256 fee,, uint256 total) = pool.quoteAcquisitionPrice(5);
@@ -95,7 +95,7 @@ contract OutageForkTest is ForkBase {
             vm.deal(bob, total);
             vm.prank(bob);
             vm.expectRevert(bytes4(0x970730d4)); // PerPoolRequestLimitExceeded
-            pool.acquireBatch{value: total}(bob, 5, fee, 0, 10_000, version, block.timestamp + 1 hours);
+            pool.acquireBatch{value: total}(bob, 5, fee, 0, 10_000, version, vm.getBlockTimestamp() + 1 hours);
             assertEq(bob.balance, total, "nothing paid");
         }
         // the first single's word is late: FWA settles in order, so the others' words arrive but they stay
@@ -107,7 +107,7 @@ contract OutageForkTest is ForkBase {
         assertEq(pool.unsettledAcquisitionCount(), k - 1 + 5, "the bound is maxInFlight - 1 + one batch");
         assertFalse(sys.poolOwner.canPurchase(bob), "closed while they are in flight");
         _assertSafe();
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(singles[0], uint256(keccak256(abi.encode("single", uint256(0)))));
         for (uint256 i; i < ids.length; ++i) {
             deliverWord(ids[i], uint256(keccak256(abi.encode("batch", i))));
@@ -126,7 +126,7 @@ contract OutageForkTest is ForkBase {
         window();
         syncAll();
         uint256[] memory ids2 = _batch(alice, 5);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         for (uint256 i; i < ids2.length; ++i) {
             deliverWord(ids2[i], uint256(keccak256(abi.encode("batch2", i))));
         }
@@ -141,12 +141,12 @@ contract OutageForkTest is ForkBase {
     function test_delayedVrfDuringOutage() public {
         uint256 a = pull(alice);
         uint256 b = pull(alice);
-        vm.roll(block.number + 20);
+        vm.roll(vm.getBlockNumber() + 20);
         deliverWord(a, uint256(keccak256("late")));
-        vm.roll(block.number + 40); // b's word never comes
+        vm.roll(vm.getBlockNumber() + 40); // b's word never comes
         pool.processAcquisitions(10);
         assertEq(uint8(statusOf(b)), uint8(IFWAPool.AcquisitionStatus.Expired));
-        vm.warp(block.timestamp + 2 days);
+        vm.warp(vm.getBlockTimestamp() + 2 days);
         syncAll();
         assertEq(sys.game.pullsExpired(), 1);
         assertGt(pool.acquisitionRefundCredit(alice), 0);
@@ -159,14 +159,14 @@ contract OutageForkTest is ForkBase {
     function test_fwaFrontendFlowsWithoutKeeper() public {
         pullAndSettle(alice, uint256(keccak256("one")));
         uint256[] memory ids = _batch(bob, 5);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         for (uint256 i; i < ids.length; ++i) {
             deliverWord(ids[i], uint256(keccak256(abi.encode("fe", i))));
         }
         pool.processAcquisitions(10);
         // a Shape delivery that fails (receiver cannot take it) and is refunded by the player after FWA's window
         uint256 r = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         uint256 w = wordFor(0.05 ether);
         vm.mockCallRevert(cfg.shapes, abi.encodeWithSignature("transferFrom(address,address,uint256)"), "");
         deliverWord(r, w);
@@ -174,7 +174,7 @@ contract OutageForkTest is ForkBase {
         vm.clearMockedCalls();
         assertEq(uint8(statusOf(r)), uint8(IFWAPool.AcquisitionStatus.DeliveryPending));
         (,,, uint256 listingId,) = pool.acquisitions(r);
-        vm.warp(block.timestamp + 7 days + 1);
+        vm.warp(vm.getBlockTimestamp() + 7 days + 1);
         vm.prank(alice);
         pool.refundFailedDelivery(listingId);
         // keeper returns
@@ -203,7 +203,7 @@ contract OutageForkTest is ForkBase {
         // fifteen draws that win 0.01 Shapes (a profit to distribute, whatever the board's odds)
         for (uint256 i; i < 15; ++i) {
             uint256 r0 = pull(alice);
-            vm.roll(block.number + 3);
+            vm.roll(vm.getBlockNumber() + 3);
             deliverWord(r0, wordFor(0.01 ether));
             pool.processAcquisitions(10);
         }
@@ -215,7 +215,7 @@ contract OutageForkTest is ForkBase {
         uint256 n;
         for (uint256 i; i < 60 && canPull(alice); ++i) {
             uint256 r = pull(alice);
-            vm.roll(block.number + 3);
+            vm.roll(vm.getBlockNumber() + 3);
             deliverWord(r, wordFor(0.01 ether)); // Shapes only, so the Ape stays in the draw
             pool.processAcquisitions(10);
             vm.prank(keeper);
@@ -250,7 +250,7 @@ contract OutageForkTest is ForkBase {
         uint256 reserveBefore = sys.burner.reserve();
         _breakMinting();
         uint256 r = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, wordFor(type(uint256).max));
         pool.processAcquisitions(10);
         vm.prank(keeper);
@@ -278,7 +278,7 @@ contract OutageForkTest is ForkBase {
         uint256 r = pull(alice);
         // governance changes markup and the keeper allowance rate while the request is in flight
         govern(address(sys.game), abi.encodeCall(CollectionGame.setPricing, (500, 100)));
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, wordFor(0.1 ether));
         pool.processAcquisitions(10);
         (,,, uint256 listingId,) = pool.acquisitions(r);

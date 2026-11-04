@@ -103,7 +103,7 @@ contract FwaPoolForkTest is ForkBase {
         vm.deal(buyer, 1 ether);
         vm.prank(buyer);
         vm.expectRevert();
-        pool.acquire{value: total}(buyer, fee, 0, 10_000, version, block.timestamp + 1);
+        pool.acquire{value: total}(buyer, fee, 0, 10_000, version, vm.getBlockTimestamp() + 1);
         // ownership cannot change: FWA locks it and the pool fwaHolder has no transfer or execute function
         vm.prank(address(sys.poolOwner));
         (bool ok,) = address(pool).call(abi.encodeWithSignature("transferOwnership(address)", fwaHolder));

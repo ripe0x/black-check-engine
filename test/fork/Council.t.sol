@@ -49,10 +49,10 @@ contract CouncilForkTest is ForkBase {
         t.schedule(address(sys.poolOwner), 0, data, bytes32(0), bytes32("a"), 7 days - 1);
         vm.prank(councilSafe);
         t.schedule(address(sys.poolOwner), 0, data, bytes32(0), bytes32("a"), 7 days);
-        vm.warp(block.timestamp + 7 days - 1);
+        vm.warp(vm.getBlockTimestamp() + 7 days - 1);
         vm.expectRevert();
         t.execute(address(sys.poolOwner), 0, data, bytes32(0), bytes32("a"));
-        vm.warp(block.timestamp + 1);
+        vm.warp(vm.getBlockTimestamp() + 1);
         vm.prank(alice); // anyone executes
         t.execute(address(sys.poolOwner), 0, data, bytes32(0), bytes32("a"));
         assertEq(sys.poolOwner.scheduleOf(0), 0.3 ether);
@@ -69,7 +69,7 @@ contract CouncilForkTest is ForkBase {
         t.cancel(id);
         vm.prank(guardian);
         t.cancel(id);
-        vm.warp(block.timestamp + 7 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
         vm.expectRevert();
         t.execute(address(sys.migration), 0, data, bytes32(0), bytes32("m"));
         assertEq(sys.migration.pending(), address(0));
@@ -85,10 +85,10 @@ contract CouncilForkTest is ForkBase {
         bytes memory data = abi.encodeCall(MigrationAuthority.propose, (address(succ)));
         vm.prank(councilSafe);
         t.schedule(address(sys.migration), 0, data, bytes32(0), bytes32("m"), 7 days);
-        vm.warp(block.timestamp + 7 days);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
         t.execute(address(sys.migration), 0, data, bytes32(0), bytes32("m"));
         assertEq(sys.migration.pending(), address(succ));
-        assertEq(sys.migration.executableAt(), block.timestamp + 72 hours);
+        assertEq(sys.migration.executableAt(), vm.getBlockTimestamp() + 72 hours);
         vm.expectRevert(MigrationAuthority.TooEarly.selector);
         sys.migration.execute();
         assertFalse(sys.game.retiring());

@@ -113,7 +113,7 @@ contract ManyApesTest is ForkBase {
             0,
             1_000,
             version,
-            block.timestamp + 1 hours
+            vm.getBlockTimestamp() + 1 hours
         );
         uint256 used = g - gasleft();
         assertLe(used, 700_000 + (include ? measured : 0), "at most the purchase plus the measured upkeep");
@@ -123,7 +123,7 @@ contract ManyApesTest is ForkBase {
         if (ran && measured > x.maxUpkeepMeasured) x.maxUpkeepMeasured = measured;
         emit log_named_uint(include ? "site draw with upkeep (gas)" : "site draw, upkeep left to keepers (gas)", used);
         emit log_named_uint("  upkeep measured (gas)", ran ? measured : 0);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(ids[0], wordFor(0.01 ether));
         pool.processAcquisitions(10);
     }
@@ -167,7 +167,7 @@ contract ManyApesTest is ForkBase {
         vm.prank(council);
         sys.poolOwner.setListingParams(lp);
         uint256 r = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, wordFor(0));
         pool.processAcquisitions(10);
         for (uint256 round; round < 60 && !_allAtMinimum(k); ++round) {
@@ -202,9 +202,9 @@ contract ManyApesTest is ForkBase {
         vm.deal(alice, total);
         g = gasleft();
         vm.prank(alice);
-        uint256 r = pool.acquire{value: total}(alice, fee, 0, 10_000, version, block.timestamp + 1 hours);
+        uint256 r = pool.acquire{value: total}(alice, fee, 0, 10_000, version, vm.getBlockTimestamp() + 1 hours);
         x.acquireGas = g - gasleft();
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         uint256 word = wordFor(type(uint256).max); // this draw wins an Ape
         g = gasleft();
         deliverWord(r, word); // FWA's VRF callback settles it on its fast path

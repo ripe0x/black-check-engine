@@ -112,8 +112,8 @@ contract KeeperPayForkTest is ForkBase {
         // CollectionGame storageLayout`; the assertion below fails if the layout moves)
         bytes32 slot = bytes32(uint256(26));
         uint256 word = uint256(vm.load(address(sys.game), slot));
-        vm.store(address(sys.game), slot, bytes32((word & type(uint64).max) | (block.timestamp << 64)));
-        assertEq(sys.game.lastUpkeepAt(), block.timestamp);
+        vm.store(address(sys.game), slot, bytes32((word & type(uint64).max) | (vm.getBlockTimestamp() << 64)));
+        assertEq(sys.game.lastUpkeepAt(), vm.getBlockTimestamp());
         (uint256 tipPaid, uint256 gasUsed) = _syncPaid(1 gwei, 0);
         assertGt(gasUsed, sys.game.PLAYER_UPKEEP_GAS());
         assertGt(tipPaid, 0, "heavy work paid");

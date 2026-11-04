@@ -90,7 +90,7 @@ contract GameForkTest is ForkBase {
     function test_captureBookedToTheWeiAndShapeDelivered() public {
         uint256 r = pull(alice);
         (,, uint256 paid,,) = pool.acquisitions(r);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         uint256 w = wordFor(0.1 ether);
         deliverWord(r, w);
         pool.processAcquisitions(10);
@@ -166,7 +166,7 @@ contract GameForkTest is ForkBase {
         uint256[4] memory wants = [uint256(0.5 ether), 0.1 ether, 0.05 ether, 0.05 ether];
         for (uint256 i; i < 4; ++i) {
             uint256 r = pull(alice);
-            vm.roll(block.number + 3);
+            vm.roll(vm.getBlockNumber() + 3);
             deliverWord(r, wordFor(wants[i]));
             pool.processAcquisitions(10);
         }
@@ -209,10 +209,10 @@ contract GameForkTest is ForkBase {
         uint256 bobBefore = bob.balance;
         vm.prank(bob);
         vm.expectRevert(bytes4(0x24e6a72a)); // PurchaseNotAllowed
-        pool.acquire{value: total}(bob, fee, 0, 10_000, version, block.timestamp + 1);
+        pool.acquire{value: total}(bob, fee, 0, 10_000, version, vm.getBlockTimestamp() + 1);
         assertEq(bob.balance, bobBefore, "refused, not refunded: no VRF fee lost");
         // worst case for the admitted requests: every one takes the cheapest prize; drift stays inside FWA's 10%
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         for (uint256 i; i < k; ++i) {
             deliverWord(rs[i], wordFor(0.01 ether));
             pool.processAcquisitions(1);
@@ -233,7 +233,7 @@ contract GameForkTest is ForkBase {
         for (uint256 i; i < k; ++i) {
             rs[i] = pull(alice);
         }
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         uint256 refunded;
         for (uint256 i; i < k; ++i) {
             deliverWord(rs[i], wordFor(0.01 ether));
@@ -249,7 +249,7 @@ contract GameForkTest is ForkBase {
 
     function _failDelivery(address who, uint256 want, address token) internal returns (uint256 r, uint256 listingId) {
         r = pull(who);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         uint256 w = wordFor(want);
         vm.mockCallRevert(token, abi.encodeWithSignature("transferFrom(address,address,uint256)"), "");
         deliverWord(r, w);
@@ -273,7 +273,7 @@ contract GameForkTest is ForkBase {
         vm.prank(keeper);
         sys.game.sync();
         assertEq(sys.game.liveCount(), sys.game.boardSize(), "row replaced while the delivery is pending");
-        vm.warp(block.timestamp + 7 days + 1);
+        vm.warp(vm.getBlockTimestamp() + 7 days + 1);
         vm.prank(alice);
         pool.refundFailedDelivery(listingId);
         (uint48 tokenId, uint72 backing, uint72 cost,,,,) = sys.game.items(listingId);
@@ -297,7 +297,7 @@ contract GameForkTest is ForkBase {
         uint256 issued = pool.lastIssuedSequence();
         assertEq(sys.game.seenSeq(), 1, "nothing booked yet");
         // a keeper returns days later; bounded batches make progress and nothing is double-booked
-        vm.warp(block.timestamp + 3 days);
+        vm.warp(vm.getBlockTimestamp() + 3 days);
         vm.prank(keeper);
         sys.game.sync();
         uint256 k = sys.game.bookPerCall();
@@ -317,7 +317,7 @@ contract GameForkTest is ForkBase {
 
     function test_expiredRequestBookedWithoutRevenue() public {
         uint256 r = pull(alice);
-        vm.roll(block.number + 40); // past selectionTimeoutBlocks with no word
+        vm.roll(vm.getBlockNumber() + 40); // past selectionTimeoutBlocks with no word
         pool.processAcquisitions(10);
         assertEq(uint8(statusOf(r)), uint8(IFWAPool.AcquisitionStatus.Expired));
         vm.prank(keeper);
@@ -342,7 +342,7 @@ contract GameForkTest is ForkBase {
         vm.prank(keeper);
         try sys.game.sync() {} catch {}
         assertTrue(pool.localPurchasesEnabled(), "a cooldown alone does not close purchases");
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, 5);
         pool.processAcquisitions(10);
         vm.prank(keeper);
@@ -373,7 +373,7 @@ contract GameForkTest is ForkBase {
         vm.prank(owner);
         sys.game.setPaused(true);
         assertFalse(pool.localPurchasesEnabled());
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, 3);
         pool.processAcquisitions(10);
         vm.prank(keeper);

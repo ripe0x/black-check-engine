@@ -9,6 +9,7 @@ import {IFWAPool} from "../../src/interfaces/IFWA.sol";
 import {DrawRouter, IGameSync} from "../../src/periphery/DrawRouter.sol";
 import {MockSuccessor} from "../../test/utils/MigrationMocks.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {IChecksOriginals as IChecksR} from "../../src/interfaces/IChecks.sol";
 
 interface ILiquidityKey {
     function poolKey() external view returns (PoolKey memory);
@@ -72,7 +73,7 @@ contract Rehearse is Script {
         return ILiquidityKey(_dep("liquidity")).poolKey();
     }
 
-    /// @notice A BAYC holder accepts the live bid for `tokenId`, naming the whole bid as its price.
+    /// @notice A Checks holder accepts the live bid for `tokenId`, naming the whole bid as its price.
     function sellCheck(uint256 tokenId) external {
         address collection = _dep("collection");
         address holder = IERC721R(collection).ownerOf(tokenId);
@@ -85,6 +86,21 @@ contract Rehearse is Script {
     }
 
     /// @notice A player pulls once through FWA directly, as FWA's own interface would.
+    /// @notice Prints the next 80-Check Original at or after `from` held by an ordinary account ("check <id>").
+    function floorCheck(uint256 from) external view {
+        address collection = _dep("collection");
+        for (uint256 id = from; id < 20_000; ++id) {
+            try IChecksR(collection).ownerOf(id) returns (address o) {
+                if (o.code.length != 0 || o == address(0) || o == _dep("poolOwner")) continue;
+                if (IChecksR(collection).getCheck(id).stored.divisorIndex == 0) {
+                    console2.log("check", id);
+                    return;
+                }
+            } catch {}
+        }
+        revert("no 80-Check found");
+    }
+
     function pull(address player) external {
         IFWAPool pool = IGameR(_dep("game")).pool();
         (uint256 fee,, uint256 total) = pool.quoteAcquisitionPrice(1);

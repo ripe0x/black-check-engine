@@ -107,13 +107,13 @@ contract RevenueForkTest is ForkBase {
         (amount,, runAt) = sys.burner.nextSlice();
         if (sys.burner.milestoneBalance() == 0) {
             assertLe(amount, 0.05 ether + sys.burner.ongoingBalance() / 100, "idle slice");
-            assertEq(runAt, block.timestamp + 60 minutes, "idle spacing");
+            assertEq(runAt, vm.getBlockTimestamp() + 60 minutes, "idle spacing");
         }
         vm.prank(keeper);
         vm.expectRevert(CollectionBurner.TooSoon.selector);
         sys.burner.process(0);
-        vm.warp(block.timestamp + 1 hours);
-        vm.roll(block.number + 1); // a new block: the burner compares with the block-open price
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
+        vm.roll(vm.getBlockNumber() + 1); // a new block: the burner compares with the block-open price
         // the slice may have emptied the bucket on this draw sequence: keep something to spend, so the next call reaches
         // the output check (ETH sent to the burner by anyone is ongoing)
         if (sys.burner.ongoingBalance() == 0 && sys.burner.milestoneBalance() == 0) {
@@ -130,15 +130,15 @@ contract RevenueForkTest is ForkBase {
         govern(address(sys.burner), abi.encodeCall(CollectionBurner.setMilestoneBps, (7_500))); // an ongoing bucket to spend (D74)
         playMany(alice, 160, 27);
         assertGt(sys.burner.ongoingBalance(), 0);
-        vm.warp(block.timestamp + 2 hours);
-        vm.roll(block.number + 1);
+        vm.warp(vm.getBlockTimestamp() + 2 hours);
+        vm.roll(vm.getBlockNumber() + 1);
         // a large buy ahead of the buyback in the same block moves the price more than 2%
         buyCoin(trader, 3 ether);
         vm.prank(keeper);
         vm.expectRevert(CollectionBurner.PriceMoved.selector);
         sys.burner.process(0);
         // next block it proceeds, from the new price, with the 3% impact cap
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
         vm.prank(keeper);
         sys.burner.process(0);
     }
@@ -147,7 +147,7 @@ contract RevenueForkTest is ForkBase {
     function test_releaseNeedsADeliveredCollectionWin() public {
         playMany(alice, 120, 22);
         uint256 r = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, wordFor(0));
         pool.processAcquisitions(10);
         (,,, uint256 shapeListing,) = pool.acquisitions(r);
@@ -178,7 +178,7 @@ contract RevenueForkTest is ForkBase {
         assertTrue(sys.burner.released(first));
         assertEq(sys.burner.milestoneIn() - in0, r1 * 6_000 / 10_000, "60% of the reserve released at booking");
         (,, uint256 runAt) = sys.burner.nextSlice();
-        assertLe(runAt, block.timestamp, "the release's first slice may run at once");
+        assertLe(runAt, vm.getBlockTimestamp(), "the release's first slice may run at once");
         // more surplus accrues, then the other Ape is won before the first release is spent
         window();
         playMany(alice, 120, 29);
@@ -196,8 +196,8 @@ contract RevenueForkTest is ForkBase {
         // the burner spends milestone ETH first, a bounded slice at a time
         uint256 slices;
         while (sys.burner.milestoneBalance() != 0 && slices < 60) {
-            vm.warp(block.timestamp + 10 minutes);
-            vm.roll(block.number + 1);
+            vm.warp(vm.getBlockTimestamp() + 10 minutes);
+            vm.roll(vm.getBlockNumber() + 1);
             vm.prank(keeper);
             sys.burner.process(0);
             ++slices;
@@ -215,7 +215,7 @@ contract RevenueForkTest is ForkBase {
 
     function _winAny() internal returns (uint256 listingId) {
         uint256 r = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, wordFor(type(uint256).max));
         pool.processAcquisitions(10);
         (,,, listingId,) = pool.acquisitions(r);

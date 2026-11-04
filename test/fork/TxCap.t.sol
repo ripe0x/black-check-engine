@@ -281,7 +281,7 @@ contract TxCapForkTest is ForkBase {
             pending[i] = pull(alice);
         }
         sys.game.upkeep(10); // ten pending requests into the game's open set
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         for (uint256 i; i < pending.length; ++i) {
             deliverWord(pending[i], uint256(keccak256(abi.encode("old", i))));
         }

@@ -106,7 +106,7 @@ contract MarketForkTest is ForkBase {
     function test_openingCurveOnBuysThenOrdinary() public {
         openMarket();
         uint256 t0 = sys.hook.launchedAt();
-        assertEq(t0, block.timestamp);
+        assertEq(t0, vm.getBlockTimestamp());
         assertEq(_feeOf(1 ether), 0.69 ether, "minute 0: 69%");
         (uint256 b, uint256 sl, uint256 left) = sys.hook.openingFee();
         assertEq(b, 6_900);
@@ -340,7 +340,7 @@ contract MarketForkTest is ForkBase {
         inputs[0] = abi.encode(abi.encodePacked(uint8(0x06), uint8(0x0c), uint8(0x0f)), params);
         vm.prank(who);
         IUniversalRouter(UNIVERSAL_ROUTER).execute{value: buy ? amountIn : 0}(
-            abi.encodePacked(uint8(0x10)), inputs, block.timestamp + 900
+            abi.encodePacked(uint8(0x10)), inputs, vm.getBlockTimestamp() + 900
         );
     }
 
@@ -354,7 +354,7 @@ contract MarketForkTest is ForkBase {
         assertGt(coins, 0, "bought through the router");
         vm.startPrank(trader);
         sys.token.approve(PERMIT2, type(uint256).max);
-        IPermit2(PERMIT2).approve(address(sys.token), UNIVERSAL_ROUTER, type(uint160).max, uint48(block.timestamp + 1800));
+        IPermit2(PERMIT2).approve(address(sys.token), UNIVERSAL_ROUTER, type(uint160).max, uint48(vm.getBlockTimestamp() + 1800));
         vm.stopPrank();
         uint256 ethBefore = trader.balance;
         _routerSwap(trader, false, coins);

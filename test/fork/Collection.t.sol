@@ -56,7 +56,7 @@ contract CollectionForkTest is ForkBase {
                 syncAll();
             }
             uint256 r = pull(alice);
-            vm.roll(block.number + 3);
+            vm.roll(vm.getBlockNumber() + 3);
             deliverWord(r, wordFor(0));
             pool.processAcquisitions(10);
             if (i % 5 == 4) {
@@ -82,7 +82,7 @@ contract CollectionForkTest is ForkBase {
         assertEq(term, 1e18, "listed at its schedule: term 1");
         assertEq(entry, sys.poolOwner.allocated(), "its episode starts at the current allocation count");
         assertEq(sys.poolOwner.survived(id), 0);
-        (uint128 ref, uint128 cash, uint8 tier,,) = sys.poolOwner.nfts(tokenId);
+        (uint128 ref, uint128 cash, uint8 tier,,,) = sys.poolOwner.nfts(tokenId);
         assertEq(tier, 0, "an 80-Check Original");
         assertEq(ref, P);
         assertEq(cash, P);
@@ -105,7 +105,7 @@ contract CollectionForkTest is ForkBase {
         // a draw that is issued but not yet settled counts nothing
         uint256 r = pull(alice);
         assertEq(sys.poolOwner.survived(id), 30, "unsettled: no credit");
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, wordFor(0));
         pool.processAcquisitions(10);
         assertEq(sys.poolOwner.survived(id), 31);
@@ -209,23 +209,23 @@ contract CollectionForkTest is ForkBase {
         uint256 id = sys.poolOwner.listedAt(0);
         CollectionPoolOwner.ListingParams memory p = sys.poolOwner.listingParams();
         assertEq(p.dailyDecayBps, 0, "off at launch");
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(vm.getBlockTimestamp() + 30 days);
         assertEq(sys.poolOwner.decayClock(), 0);
         assertEq(sys.poolOwner.notionalOf(id), P, "idle: no time decay while off");
         p.dailyDecayBps = 100; // 1% of its price a day
         councilCall(address(sys.poolOwner), abi.encodeCall(CollectionPoolOwner.setListingParams, (p)));
         assertEq(sys.poolOwner.notionalOf(id), P, "the 30 idle days are not counted");
-        vm.warp(block.timestamp + 10 days);
+        vm.warp(vm.getBlockTimestamp() + 10 days);
         assertEq(sys.poolOwner.notionalOf(id), P - P / 10, "1% a day for 10 days");
         _processAt(0);
         assertEq(_notional(id), P - P / 10, "repriced at FWA with no gameplay");
         p.dailyDecayBps = 0;
         councilCall(address(sys.poolOwner), abi.encodeCall(CollectionPoolOwner.setListingParams, (p)));
-        vm.warp(block.timestamp + 10 days);
+        vm.warp(vm.getBlockTimestamp() + 10 days);
         assertEq(sys.poolOwner.notionalOf(id), P - P / 10, "stopped");
         p.dailyDecayBps = 10_000;
         councilCall(address(sys.poolOwner), abi.encodeCall(CollectionPoolOwner.setListingParams, (p)));
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         assertEq(sys.poolOwner.notionalOf(id), P * 8_500 / 10_000, "the floor holds");
     }
 
@@ -268,7 +268,7 @@ contract CollectionForkTest is ForkBase {
 
     function _winCheck(address who) internal returns (uint256 listingId) {
         uint256 r = pull(who);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, wordFor(type(uint256).max));
         pool.processAcquisitions(10);
         (,,, listingId,) = pool.acquisitions(r);
@@ -280,7 +280,7 @@ contract CollectionForkTest is ForkBase {
         uint256 reserve = sys.burner.reserve();
         uint256 r = pull(alice);
         uint256 late = pull(bob);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, wordFor(type(uint256).max));
         pool.processAcquisitions(1);
         (,,, uint256 listingId,) = pool.acquisitions(r);
@@ -288,7 +288,7 @@ contract CollectionForkTest is ForkBase {
         assertEq(IERC721Lite(cfg.collection).ownerOf(_tokenOf(listingId)), alice, "the winner holds the Check");
         assertTrue(sys.poolOwner.canPurchase(alice));
         uint256 shapeOnly = pull(carol);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(late, 77);
         deliverWord(shapeOnly, 78);
         pool.processAcquisitions(10);
@@ -346,7 +346,7 @@ contract CollectionForkTest is ForkBase {
         govern(address(sys.burner), abi.encodeCall(CollectionBurner.setTiers, (CollectionBurner.Tiers(0.5 ether, 1_500, 6_000, 24 hours))));
         playMany(bob, 30, 2);
         uint256 r = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, wordFor(0.05 ether));
         pool.processAcquisitions(10);
         (,,, uint256 listingId,) = pool.acquisitions(r);
@@ -355,7 +355,7 @@ contract CollectionForkTest is ForkBase {
         sys.burner.release(listingId);
         assertFalse(sys.poolOwner.settleListing(listingId), "not a Check listing");
         uint256 r2 = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r2, wordFor(0.5 ether));
         pool.processAcquisitions(10);
         (,,, uint256 big,) = pool.acquisitions(r2);
@@ -378,7 +378,7 @@ contract CollectionForkTest is ForkBase {
     function test_failedDeliveryReturnsWithANewEpisode() public {
         _shapeDraws(30);
         uint256 r = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         uint256 w = wordFor(type(uint256).max);
         vm.mockCallRevert(cfg.collection, abi.encodeWithSignature("transferFrom(address,address,uint256)"), "");
         deliverWord(r, w);
@@ -392,7 +392,7 @@ contract CollectionForkTest is ForkBase {
         assertEq(sys.poolOwner.exposureSum(), 0);
         assertTrue(pool.localPurchasesEnabled(), "Shape and Pack draws continue meanwhile");
         assertFalse(sys.burner.qualifies(listingId));
-        vm.warp(block.timestamp + 7 days + 1);
+        vm.warp(vm.getBlockTimestamp() + 7 days + 1);
         vm.prank(alice);
         pool.refundFailedDelivery(listingId);
         vm.prank(keeper);
@@ -429,7 +429,7 @@ contract CollectionForkTest is ForkBase {
         sys.vault.sweep();
         uint256 id = nextCheckId();
         sellCheckAt(id, 1);
-        (uint128 ref, uint128 cash,,,) = sys.poolOwner.nfts(id);
+        (uint128 ref, uint128 cash,,,,) = sys.poolOwner.nfts(id);
         assertEq(ref, sys.poolOwner.MIN_REF_COST());
         assertEq(cash, 1);
         window();

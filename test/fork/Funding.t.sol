@@ -32,8 +32,8 @@ contract FundingForkTest is ForkBase {
     function test_prolongedFundingModeLosesNothing() public {
         accrueFees(2 ether);
         // a year passes with nobody acting: nothing expires, nothing is spent
-        vm.warp(block.timestamp + 365 days);
-        vm.roll(block.number + 2_600_000);
+        vm.warp(vm.getBlockTimestamp() + 365 days);
+        vm.roll(vm.getBlockNumber() + 2_600_000);
         assertEq(address(sys.vault).balance, 2 ether);
         assertEq(sys.vault.generalBalance(), 2 ether);
         assertFalse(sys.game.activated());
@@ -77,7 +77,7 @@ contract FundingForkTest is ForkBase {
         sys.vault.contributeNFT(id);
         vm.stopPrank();
         assertEq(bayc.ownerOf(id), address(sys.poolOwner));
-        (uint128 ref, uint128 cash,, uint8 source,) = sys.poolOwner.nfts(id);
+        (uint128 ref, uint128 cash,, uint8 source,,) = sys.poolOwner.nfts(id);
         assertEq(ref, cfg.refPrice, "reference = the latest clearing price, never donor-chosen");
         assertEq(cash, 0);
         assertEq(source, 1, "donated");
@@ -105,7 +105,7 @@ contract FundingForkTest is ForkBase {
         );
         assertTrue(ok);
         sys.vault.claimStray(id);
-        (uint128 ref,,,,) = sys.poolOwner.nfts(id);
+        (uint128 ref,,,,,) = sys.poolOwner.nfts(id);
         assertEq(ref, cfg.refPrice);
         vm.expectRevert(CollectionPoolOwner.NotCustody.selector);
         sys.vault.claimStray(id);
@@ -129,8 +129,8 @@ contract FundingForkTest is ForkBase {
         sys.vault.sweep();
         assertEq(sys.vault.liveBid(), 6 ether);
         // a week with nobody sweeping: it stays where it is
-        vm.warp(block.timestamp + 7 days);
-        vm.roll(block.number + 50_400);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
+        vm.roll(vm.getBlockNumber() + 50_400);
         assertEq(sys.vault.liveBid(), 6 ether, "no time-based rise");
         // above the threshold, sweeps meter ETH in (keepers, waiting sellers, players' draws)
         sys.vault.sweep();
@@ -148,7 +148,7 @@ contract FundingForkTest is ForkBase {
         vm.stopPrank();
         assertEq(holder.balance - before, bid);
         assertEq(bayc.ownerOf(id), address(sys.poolOwner));
-        (uint128 ref, uint128 cash,, uint8 source,) = sys.poolOwner.nfts(id);
+        (uint128 ref, uint128 cash,, uint8 source,,) = sys.poolOwner.nfts(id);
         assertEq(ref, bid);
         assertEq(cash, bid);
         assertEq(source, 0);
@@ -209,8 +209,8 @@ contract FundingForkTest is ForkBase {
         p.consideration[0] = SeaportTypes.ConsiderationItem(SeaportTypes.ItemType.NATIVE, address(0), 0, 3.9 ether, 3.9 ether, payable(seller));
         p.consideration[1] = SeaportTypes.ConsiderationItem(SeaportTypes.ItemType.NATIVE, address(0), 0, 0.1 ether, 0.1 ether, payable(market));
         p.orderType = SeaportTypes.OrderType.FULL_OPEN;
-        p.startTime = block.timestamp - 1;
-        p.endTime = block.timestamp + 1 days;
+        p.startTime = vm.getBlockTimestamp() - 1;
+        p.endTime = vm.getBlockTimestamp() + 1 days;
         p.salt = 42;
         p.totalOriginalConsiderationItems = 2;
         SeaportOrder[] memory orders = new SeaportOrder[](1);
@@ -252,7 +252,7 @@ contract FundingForkTest is ForkBase {
         assertEq(sys.vault.contributions(), 0, "returned change is not a contribution");
         assertEq(bayc.ownerOf(id), address(sys.poolOwner));
         assertEq(address(adapter).balance, 0);
-        (uint128 ref,,,,) = sys.poolOwner.nfts(id);
+        (uint128 ref,,,,,) = sys.poolOwner.nfts(id);
         assertEq(ref, 4 ether);
     }
 
@@ -271,7 +271,7 @@ contract FundingForkTest is ForkBase {
         uint256 spent = sys.vault.fillOrder(id, 10 ether, abi.encode(ao));
         assertEq(spent, 4 ether, "the order's price");
         assertEq(sys.vault.lastPrice(), 4 ether);
-        (uint128 ref, uint128 cash,,,) = sys.poolOwner.nfts(id);
+        (uint128 ref, uint128 cash,,,,) = sys.poolOwner.nfts(id);
         assertEq(ref, 4 ether);
         assertEq(cash, 4 ether);
         assertEq(sys.vault.contributions() - c0, 0.05 ether, "the inflow is booked as a contribution");
@@ -347,7 +347,7 @@ contract FundingForkTest is ForkBase {
         assertEq(seller.balance - sellerBefore, 3.9 ether);
         assertEq(vaultBefore - address(sys.vault).balance, 4.01 ether, "the order price and the finder fee, nothing else");
         assertEq(sys.vault.lastPrice(), 4 ether);
-        (uint128 ref, uint128 cash,,,) = sys.poolOwner.nfts(id);
+        (uint128 ref, uint128 cash,,,,) = sys.poolOwner.nfts(id);
         assertEq(ref, 4 ether);
         assertEq(cash, 4 ether);
         assertEq(address(sys.adapter).balance, 5 ether, "the prefund stays in the adapter");

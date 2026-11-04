@@ -103,7 +103,7 @@ contract LayerShareForkTest is ForkBase {
         vm.expectRevert(LayerTap.NothingToFlush.selector);
         tap.flush();
         uint256 supply = ISupply(LAYER).totalSupply();
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
         // a keeper passes at least the router's own price floor (it reverts `MinLayerOutBelowFloor(min, floor)` below it)
         (bool ok, bytes memory ret) = LAYER_ROUTER.call(abi.encodeCall(ILayerRouter.processBurnWeth, (0)));
         assertFalse(ok);

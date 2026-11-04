@@ -52,7 +52,7 @@ contract ChecksAcquisitionForkTest is ForkBase {
         vm.stopPrank();
         assertEq(holder.balance - balance, bid, "paid the bid");
         assertEq(checks.ownerOf(id), address(sys.poolOwner), "an Original with the Edition's id, in custody");
-        (uint128 ref, uint128 cash, uint8 tier,, CollectionPoolOwner.NftState st) = sys.poolOwner.nfts(id);
+        (uint128 ref, uint128 cash, uint8 tier,, CollectionPoolOwner.NftState st,) = sys.poolOwner.nfts(id);
         assertEq(tier, 0, "an 80-Check");
         assertEq(cash, bid);
         assertEq(ref, bid);
@@ -105,7 +105,7 @@ contract ChecksAcquisitionForkTest is ForkBase {
         IERC721Lite(cfg.collection).setApprovalForAll(address(sys.vault), true);
         sys.vault.contributeNFT(forty);
         vm.stopPrank();
-        (uint128 ref, uint128 cash, uint8 tier,,) = sys.poolOwner.nfts(forty);
+        (uint128 ref, uint128 cash, uint8 tier,,,) = sys.poolOwner.nfts(forty);
         assertEq(tier, 1);
         assertEq(ref, cfg.schedule[1]);
         assertEq(cash, 0);

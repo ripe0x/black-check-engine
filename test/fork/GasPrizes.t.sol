@@ -18,7 +18,7 @@ contract GasPrizesForkTest is ForkBase {
 
     function _replaceGas(uint256 backing, uint256 nonce) internal returns (uint256 used) {
         uint256 r = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, wordFor(backing));
         pool.processAcquisitions(10);
         window();

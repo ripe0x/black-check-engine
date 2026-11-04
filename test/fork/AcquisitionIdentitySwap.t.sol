@@ -126,13 +126,13 @@ contract AcquisitionIdentitySwapForkTest is FundingForkTest {
         assertEq(bayc.balanceOf(address(sys.poolOwner)), balanceBefore + 2, "real NFT count");
         assertEq(sys.poolOwner.heldCount(), heldBefore + 1, "only bought Ape registered so far");
         assertEq(sys.vault.lastPrice(), 4 ether, "callback did not corrupt acquisition price");
-        (, uint128 purchasedCash,, uint8 purchasedSource,) = sys.poolOwner.nfts(offeredId);
+        (, uint128 purchasedCash,, uint8 purchasedSource,,) = sys.poolOwner.nfts(offeredId);
         assertEq(purchasedCash, 4 ether, "marketplace Ape cash cost");
         assertEq(purchasedSource, 0, "marketplace Ape source");
 
         sys.vault.claimStray(paddingId);
         assertEq(sys.poolOwner.heldCount(), heldBefore + 2, "padding Ape has public registration route");
-        (, uint128 paddingCash,, uint8 source,) = sys.poolOwner.nfts(paddingId);
+        (, uint128 paddingCash,, uint8 source,,) = sys.poolOwner.nfts(paddingId);
         assertEq(paddingCash, 0, "padding Ape recorded as donation");
         assertEq(source, 1, "padding Ape source");
     }
@@ -160,7 +160,7 @@ contract AcquisitionIdentitySwapForkTest is FundingForkTest {
         assertEq(bayc.balanceOf(address(sys.poolOwner)), balanceBefore + 2, "real NFT count");
         assertEq(sys.poolOwner.heldCount(), heldBefore + 1, "only paid Ape registered so far");
         assertEq(sys.vault.lastPrice(), 1, "seller-named price changed in callback");
-        (, uint128 purchasedCash,, uint8 purchasedSource,) = sys.poolOwner.nfts(offeredId);
+        (, uint128 purchasedCash,, uint8 purchasedSource,,) = sys.poolOwner.nfts(offeredId);
         assertEq(purchasedCash, 1, "one-wei Ape cash cost");
         assertEq(purchasedSource, 0, "direct-sale Ape source");
         sys.vault.claimStray(paddingId);
@@ -192,7 +192,7 @@ contract AcquisitionIdentitySwapForkTest is FundingForkTest {
                 assertTrue(tokenId != paddingId, "unregistered padding was listed");
             }
             assertTrue(cheapListing != 0, "cheap Ape was not listed");
-            (uint128 referenceCost, uint128 cashCost,,,) = sys.poolOwner.nfts(offeredId);
+            (uint128 referenceCost, uint128 cashCost,,,,) = sys.poolOwner.nfts(offeredId);
             assertEq(referenceCost, sys.poolOwner.MIN_REF_COST(), "cheap Ape reference was not floored");
             assertEq(cashCost, 1, "cheap Ape cash cost changed");
             (,,,,, uint256 price,,) = pool.listings(cheapListing);
@@ -206,7 +206,7 @@ contract AcquisitionIdentitySwapForkTest is FundingForkTest {
             vm.deal(address(recipient), total);
             vm.prank(address(recipient));
             requestId = pool.acquire{value: total}(
-                address(recipient), fee, 0, 10_000, pool.inventoryVersion(), block.timestamp + 1 hours
+                address(recipient), fee, 0, 10_000, pool.inventoryVersion(), vm.getBlockTimestamp() + 1 hours
             );
         }
         assertLt(gasStart - gasleft(), 16_777_216, "sale, listing and request exceed transaction gas cap");
@@ -217,7 +217,7 @@ contract AcquisitionIdentitySwapForkTest is FundingForkTest {
         }
 
         // A later VRF word selecting a Shape leaves the cheap Ape in the pool; the request has no NFT-ID input.
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(requestId, wordFor(0));
         pool.processAcquisitions(10);
         assertEq(bayc.ownerOf(offeredId), address(pool), "Shape outcome delivered cheap Ape");

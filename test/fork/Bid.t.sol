@@ -23,8 +23,8 @@ contract BidForkTest is ForkBase {
     }
 
     function _wait() internal {
-        vm.roll(block.number + COOLDOWN);
-        vm.warp(block.timestamp + COOLDOWN * 12);
+        vm.roll(vm.getBlockNumber() + COOLDOWN);
+        vm.warp(vm.getBlockTimestamp() + COOLDOWN * 12);
     }
 
     /// Funds arriving fast fill the bid to its threshold at once and no further: above it ETH is metered in.
@@ -52,8 +52,8 @@ contract BidForkTest is ForkBase {
         sys.vault.sweep();
         sys.vault.sweep();
         uint256 b = sys.vault.liveBid();
-        vm.warp(block.timestamp + 30 days);
-        vm.roll(block.number + 216_000);
+        vm.warp(vm.getBlockTimestamp() + 30 days);
+        vm.roll(vm.getBlockNumber() + 216_000);
         assertEq(sys.vault.liveBid(), b, "nothing accrues with time");
         sys.vault.sweep();
         assertEq(sys.vault.liveBid(), b + SWEEP, "a month later: one step, not a month of rise");
@@ -157,7 +157,7 @@ contract BidForkTest is ForkBase {
         uint256 fwd = sys.vault.sweep();
         assertEq(anyone.balance - before, flat, "at a zero gas price: the flat fee alone, for a fill of ~4.5 ETH");
         assertGt(fwd, 4 ether);
-        vm.roll(block.number + 300);
+        vm.roll(vm.getBlockNumber() + 300);
         vm.txGasPrice(1 gwei);
         before = anyone.balance;
         vm.prank(anyone);
@@ -175,11 +175,11 @@ contract BidForkTest is ForkBase {
     function test_risingFloorNeedsNoUpdate() public {
         assertEq(sys.vault.bidParams().maxPrice, 0, "no cap");
         accrueFees(40 ether);
-        uint256 start = block.number;
+        uint256 start = vm.getBlockNumber();
         uint256 bid = riseBidTo(12 ether);
         assertGe(bid, 12 ether, "reached a doubled floor");
         // 4.8 ETH above the 7.2 ETH ceiling at 0.01 ETH per 300 blocks (D82): 480 sweeps, 20 days
-        assertApproxEqRel((block.number - start) * 12, 20 days, 0.15e18, "slowly above the ceiling");
+        assertApproxEqRel((vm.getBlockNumber() - start) * 12, 20 days, 0.15e18, "slowly above the ceiling");
         // the bid follows on its own, but no purchase is booked above 120% of the council's price (D012): the council
         // moves the schedule with the market first
         uint256 id = nextCheckId();
@@ -286,7 +286,7 @@ contract FlowForkTest is ForkBase {
         launchGame(6 ether);
         assertEq(sys.vault.overflowBps(), 0, "off at launch (D72)");
         govern(address(sys.vault), abi.encodeCall(FundingVault.setOverflowBps, (5_000)));
-        vm.roll(block.number + 300);
+        vm.roll(vm.getBlockNumber() + 300);
     }
 
     /// @dev What the vault may spend beyond its bid and the next Ape.
@@ -309,7 +309,7 @@ contract FlowForkTest is ForkBase {
         assertEq(_excess(), 0, "less than the next Ape beyond the bid");
         assertEq(sys.vault.pendingOverflow(), 0);
         uint256 burner0 = address(sys.burner).balance;
-        vm.roll(block.number + 300);
+        vm.roll(vm.getBlockNumber() + 300);
         sys.vault.sweep();
         assertEq(address(sys.burner).balance, burner0);
         assertEq(sys.vault.unsplitFees(), 0, "counted fees become capital at the sweep");
@@ -326,7 +326,7 @@ contract FlowForkTest is ForkBase {
         assertGt(_excess(), 2 ether);
         assertEq(sys.vault.pendingOverflow(), 2 ether, "50% of the fees");
         uint256 ongoing0 = sys.burner.ongoingBalance();
-        vm.roll(block.number + 300);
+        vm.roll(vm.getBlockNumber() + 300);
         sys.vault.sweep();
         assertEq(sys.burner.ongoingBalance() - ongoing0, 2 ether, "to ongoing buybacks");
         assertEq(sys.vault.overflowOut(), 2 ether);
@@ -350,7 +350,7 @@ contract FlowForkTest is ForkBase {
         assertEq(_excess(), 1 ether);
         assertGt((short + 1 ether) / 2, 1 ether);
         assertEq(sys.vault.pendingOverflow(), 1 ether, "capped at the excess");
-        vm.roll(block.number + 300);
+        vm.roll(vm.getBlockNumber() + 300);
         sys.vault.sweep();
         assertEq(sys.vault.overflowOut(), 1 ether);
         assertGe(sys.vault.acquisitionBudget(), sys.vault.lastPrice() + sys.vault.bidBalance() - cfg.bid.maxSweepWei - 0.01 ether,
@@ -406,15 +406,15 @@ contract FlowGasForkTest is ForkBase {
         deployChecksAt(6 ether);
         launchGame(6 ether);
         govern(address(sys.vault), abi.encodeCall(FundingVault.setOverflowBps, (5_000)));
-        vm.roll(block.number + 300);
+        vm.roll(vm.getBlockNumber() + 300);
         accrueFees(30 ether);
         sys.vault.sweep();
-        vm.roll(block.number + 300);
+        vm.roll(vm.getBlockNumber() + 300);
         uint256 g = gasleft();
         sys.vault.sweep();
         emit log_named_uint("sweep: a metered step, nothing to split", g - gasleft());
         accrueFees(4 ether);
-        vm.roll(block.number + 300);
+        vm.roll(vm.getBlockNumber() + 300);
         g = gasleft();
         sys.vault.sweep();
         emit log_named_uint("sweep with overflow and a metered step", g - gasleft());

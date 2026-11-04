@@ -181,8 +181,8 @@ abstract contract ForkBase is Test, LaunchConfig {
 
     /// @dev Past the hook's opening curve (69% falling one point a minute to the ordinary fee by minute 64).
     function pastOpeningCurve() internal {
-        vm.warp(block.timestamp + 65 minutes);
-        vm.roll(block.number + 325);
+        vm.warp(vm.getBlockTimestamp() + 65 minutes);
+        vm.roll(vm.getBlockNumber() + 325);
     }
 
     /// @dev Every trading fee paid so far: the vault's part and the $LAYER share waiting in the tap (D90).
@@ -229,8 +229,8 @@ abstract contract ForkBase is Test, LaunchConfig {
             try sys.vault.sweep() {}
             catch {
                 uint256 next = sys.vault.nextSweepBlock();
-                if (block.number >= next) return bid; // nothing left to forward
-                vm.warp(block.timestamp + (next - block.number) * 12);
+                if (vm.getBlockNumber() >= next) return bid; // nothing left to forward
+                vm.warp(vm.getBlockTimestamp() + (next - vm.getBlockNumber()) * 12);
                 vm.roll(next);
             }
         }
@@ -324,7 +324,7 @@ abstract contract ForkBase is Test, LaunchConfig {
         uint256 version = pool.inventoryVersion();
         vm.deal(purchaser, purchaser.balance + total);
         vm.prank(purchaser);
-        requestId = pool.acquire{value: total}(purchaser, fee, 0, 10_000, version, block.timestamp + 1 hours);
+        requestId = pool.acquire{value: total}(purchaser, fee, 0, 10_000, version, vm.getBlockTimestamp() + 1 hours);
     }
 
     function deliverWord(uint256 requestId, uint256 word) internal {
@@ -336,7 +336,7 @@ abstract contract ForkBase is Test, LaunchConfig {
 
     function pullAndSettle(address purchaser, uint256 word) internal returns (uint256 requestId) {
         requestId = pull(purchaser);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(requestId, word);
         pool.processAcquisitions(10);
     }
@@ -363,7 +363,7 @@ abstract contract ForkBase is Test, LaunchConfig {
 
     function window() internal {
         (, uint256 interval,,,,,,) = sys.game.settings();
-        vm.warp(block.timestamp + interval);
+        vm.warp(vm.getBlockTimestamp() + interval);
     }
 
     function syncAll() internal {

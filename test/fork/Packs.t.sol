@@ -38,7 +38,7 @@ contract PacksForkTest is ForkBase {
 
     function _win(address who, uint256 backing) internal returns (uint256 r, uint256 listingId, uint256 tokenId) {
         r = pull(who);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, wordFor(backing));
         pool.processAcquisitions(10);
         (,,, listingId,) = pool.acquisitions(r);
@@ -108,7 +108,7 @@ contract PacksForkTest is ForkBase {
     /// two mint fees.
     function test_failedPackDeliveryRecoveredAndRedeemed() public {
         uint256 r = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         uint256 w = wordFor(0.02 ether);
         vm.mockCallRevert(sys.packs, abi.encodeWithSignature("transferFrom(address,address,uint256)"), "");
         deliverWord(r, w);
@@ -120,7 +120,7 @@ contract PacksForkTest is ForkBase {
         vm.prank(keeper);
         sys.game.sync();
         assertEq(sys.game.liveCount(), sys.game.boardSize() - 1, "row vacated while pending");
-        vm.warp(block.timestamp + 7 days + 1);
+        vm.warp(vm.getBlockTimestamp() + 7 days + 1);
         vm.prank(alice);
         pool.refundFailedDelivery(listingId);
         uint256 expenseBefore = sys.game.prizeExpense();
@@ -145,14 +145,14 @@ contract PacksForkTest is ForkBase {
             uint256 version = pool.inventoryVersion();
             vm.deal(alice, alice.balance + total);
             vm.prank(alice);
-            uint256[] memory ids = pool.acquireBatch{value: total}(alice, 5, fee, 0, 10_000, version, block.timestamp + 1 hours);
+            uint256[] memory ids = pool.acquireBatch{value: total}(alice, 5, fee, 0, 10_000, version, vm.getBlockTimestamp() + 1 hours);
             for (uint256 i; i < 5; ++i) {
                 all[k++] = ids[i];
             }
-            vm.roll(block.number + 1);
+            vm.roll(vm.getBlockNumber() + 1);
             if (!sys.poolOwner.canPurchase(alice)) {
                 // the in-flight bound: settle what is outstanding before the next batch
-                vm.roll(block.number + 25);
+                vm.roll(vm.getBlockNumber() + 25);
                 for (uint256 j; j < k; ++j) {
                     if (statusOf(all[j]) == IFWAPool.AcquisitionStatus.Pending) {
                         deliverWord(all[j], uint256(keccak256(abi.encode("late", j))));
@@ -161,7 +161,7 @@ contract PacksForkTest is ForkBase {
                 pool.processAcquisitions(20);
             }
         }
-        vm.roll(block.number + 25);
+        vm.roll(vm.getBlockNumber() + 25);
         for (uint256 j; j < k; ++j) {
             if (statusOf(all[j]) == IFWAPool.AcquisitionStatus.Pending) {
                 deliverWord(all[j], uint256(keccak256(abi.encode("late", j))));
@@ -314,7 +314,7 @@ contract PacksForkTest is ForkBase {
             assertFalse(sys.poolOwner.canPurchase(system[i]));
             vm.prank(griefer);
             vm.expectRevert();
-            pool.acquire{value: total}(system[i], fee, 0, 10_000, version, block.timestamp + 1 hours);
+            pool.acquire{value: total}(system[i], fee, 0, 10_000, version, vm.getBlockTimestamp() + 1 hours);
         }
         assertEq(griefer.balance, total, "nothing was charged");
         assertEq(pool.unsettledAcquisitionCount(), 0);

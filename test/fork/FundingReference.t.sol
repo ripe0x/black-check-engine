@@ -44,9 +44,9 @@ contract FundingReferenceForkTest is ForkBase {
         assertEq(sys.vault.activationThreshold(), 3.375 ether, "75% of the reference");
         assertEq(sys.vault.bidCeiling(), 5.4 ether, "120% of the reference");
         // the bid can still reach a 6 ETH Ape: to the ceiling at the normal meter, then 0.01 ETH per 300 blocks
-        uint256 start = block.number;
+        uint256 start = vm.getBlockNumber();
         assertGe(riseBidTo(6 ether), 6 ether);
-        uint256 hoursTaken = (block.number - start) * 12 / 1 hours;
+        uint256 hoursTaken = (vm.getBlockNumber() - start) * 12 / 1 hours;
         emit log_named_uint("hours for the bid to reach 6 ETH again", hoursTaken);
         assertLt(hoursTaken, 72, "within three days");
     }
@@ -133,7 +133,7 @@ contract FundingReferenceForkTest is ForkBase {
         IERC721Lite(cfg.collection).setApprovalForAll(address(sys.vault), true);
         sys.vault.contributeNFT(id);
         vm.stopPrank();
-        (uint128 ref, uint128 cash,,,) = sys.poolOwner.nfts(id);
+        (uint128 ref, uint128 cash,,,,) = sys.poolOwner.nfts(id);
         assertEq(ref, 4.5 ether);
         assertEq(cash, 0);
         assertBooks();

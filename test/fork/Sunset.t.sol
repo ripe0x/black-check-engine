@@ -46,9 +46,9 @@ contract SunsetForkTest is ForkBase {
         sys.game.retireStep();
         assertFalse(sys.game.retired());
         // the requests settle after retirement; one expires, one is fulfilled
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(a, 1);
-        vm.roll(block.number + 40);
+        vm.roll(vm.getBlockNumber() + 40);
         pool.processAcquisitions(10);
         assertEq(uint8(statusOf(a)), uint8(IFWAPool.AcquisitionStatus.Fulfilled));
         assertEq(uint8(statusOf(b)), uint8(IFWAPool.AcquisitionStatus.Expired));
@@ -76,9 +76,9 @@ contract SunsetForkTest is ForkBase {
         // auction: 150% of the recorded cost at the start (the flush, a keeper job, started the clock), 25% after 30
         // days; the price to the burner, any excess back to the buyer
         uint256 ape = _sunsetApe();
-        assertEq(sys.sunset.startedAt(), block.timestamp, "the flush started the clock");
+        assertEq(sys.sunset.startedAt(), vm.getBlockTimestamp(), "the flush started the clock");
         assertEq(sys.sunset.auctionPrice(ape), 9 ether);
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(vm.getBlockTimestamp() + 30 days);
         uint256 price = sys.sunset.auctionPrice(ape);
         assertEq(price, 1.5 ether);
         vm.deal(bidder, price - 1);
@@ -124,7 +124,7 @@ contract SunsetForkTest is ForkBase {
         sys.migration.proposeFeeRecipient(other);
         _sunset();
         assertEq(sys.migration.pendingFeeRecipient(), address(0), "the pending fee recipient cancelled");
-        vm.warp(block.timestamp + 72 hours);
+        vm.warp(vm.getBlockTimestamp() + 72 hours);
         vm.expectRevert(MigrationAuthority.NothingPending.selector);
         sys.migration.executeFeeRecipient();
         vm.startPrank(council);

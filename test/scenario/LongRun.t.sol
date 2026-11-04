@@ -33,7 +33,7 @@ contract LongRunScenarioTest is ForkBase {
         // draw stays open for Shapes and Packs (D53)
         if (sys.game.collectionWins() == 0) {
             uint256 r = pull(alice);
-            vm.roll(block.number + 3);
+            vm.roll(vm.getBlockNumber() + 3);
             deliverWord(r, wordFor(type(uint256).max));
             pool.processAcquisitions(10);
             vm.prank(keeper);
@@ -41,8 +41,8 @@ contract LongRunScenarioTest is ForkBase {
         }
         assertEq(sys.game.collectionWins(), 1);
         assertEq(sys.burner.releases(), 1, "milestone released on the win");
-        vm.warp(block.timestamp + 1 hours);
-        vm.roll(block.number + 1);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
+        vm.roll(vm.getBlockNumber() + 1);
         vm.prank(keeper);
         sys.burner.process(0);
         assertGt(sys.burner.totalBurned(), 0, "buybacks without trading, once the win released the reserve");
@@ -56,7 +56,7 @@ contract LongRunScenarioTest is ForkBase {
         assertBooks();
         // a long quiet period: nothing decays, nothing is lost, keepers cannot drain anything
         uint256 cash = sys.game.cash();
-        vm.warp(block.timestamp + 60 days);
+        vm.warp(vm.getBlockTimestamp() + 60 days);
         vm.prank(keeper);
         try sys.game.sync() {} catch {}
         assertEq(sys.game.cash(), cash);
@@ -111,7 +111,7 @@ contract LongRunScenarioTest is ForkBase {
         emit log_named_decimal_uint("VRF fee at 60 gwei", vrf, 18);
         assertEq(vrf, 1_500_000 * 60 gwei * 13_000 / 10_000);
         uint256 r = pull(alice);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(r, 123);
         pool.processAcquisitions(10);
         uint256 balBefore = keeper.balance;

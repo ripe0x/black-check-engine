@@ -5,7 +5,10 @@ import {ReentrancyGuard} from "solady/utils/ReentrancyGuard.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 interface ISunsetPoolOwner {
-    function nfts(uint256 tokenId) external view returns (uint128 refCost, uint128 cashCost, uint128, uint8, uint8);
+    function nfts(uint256 tokenId)
+        external
+        view
+        returns (uint128 refCost, uint128 cashCost, uint8 tier, uint8 source, uint8 state, uint32 carried);
 }
 
 interface ISunsetGame {
@@ -67,7 +70,7 @@ contract Sunset is ReentrancyGuard {
     /// @notice Auction price of an Ape held here: 150% of its recorded cost falling linearly to 25% over 30 days, then
     ///         25%. Before the clock starts, 150%.
     function auctionPrice(uint256 tokenId) public view returns (uint256) {
-        (uint128 ref,,,,) = poolOwner.nfts(tokenId);
+        (uint128 ref,,,,,) = poolOwner.nfts(tokenId);
         uint256 t = startedAt == 0 ? 0 : block.timestamp - startedAt;
         if (t > AUCTION_DURATION) t = AUCTION_DURATION;
         return uint256(ref) * (15_000 - 12_500 * t / AUCTION_DURATION) / BPS;

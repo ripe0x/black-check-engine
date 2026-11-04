@@ -93,12 +93,12 @@ abstract contract ThroughputBase is ForkBase {
         uint256 version = pool.inventoryVersion();
         vm.deal(who, who.balance + total);
         vm.prank(who);
-        try pool.acquireBatch{value: total}(who, count, fee, 0, 10_000, version, block.timestamp + 1 hours) returns (
+        try pool.acquireBatch{value: total}(who, count, fee, 0, 10_000, version, vm.getBlockTimestamp() + 1 hours) returns (
             uint256[] memory ids
         ) {
             for (uint256 i; i < ids.length; ++i) {
                 uint256 delay = sc.vrfMin + (sc.vrfMax > sc.vrfMin ? _rand() % (sc.vrfMax - sc.vrfMin + 1) : 0);
-                pend.push(Pending(ids[i], block.number + delay, _rand() % 1e6 < sc.missingPpm));
+                pend.push(Pending(ids[i], vm.getBlockNumber() + delay, _rand() % 1e6 < sc.missingPpm));
                 ++r.issued;
             }
             uint256 u = pool.unsettledAcquisitionCount();
@@ -112,7 +112,7 @@ abstract contract ThroughputBase is ForkBase {
         uint256 i;
         while (i < pend.length) {
             Pending memory p = pend[i];
-            if (p.missing || block.number < p.readyAt) {
+            if (p.missing || vm.getBlockNumber() < p.readyAt) {
                 ++i;
                 continue;
             }
@@ -139,8 +139,8 @@ abstract contract ThroughputBase is ForkBase {
         rng = seed;
         uint256 firstSeq = pool.lastIssuedSequence() + 1;
         for (uint256 b; b < sc.blocks; ++b) {
-            vm.roll(block.number + 1);
-            vm.warp(block.timestamp + 12);
+            vm.roll(vm.getBlockNumber() + 1);
+            vm.warp(vm.getBlockTimestamp() + 12);
             if (_rand() % 1e6 < sc.arrivalPpm) _issue(r, sc, _rand() % 1e6 < sc.batchPpm ? BATCH : 1);
             if (sc.burstEvery != 0 && b % sc.burstEvery == sc.burstEvery - 1) {
                 for (uint256 k; k < 3; ++k) {
@@ -152,8 +152,8 @@ abstract contract ThroughputBase is ForkBase {
             if (b % sc.syncEvery == 0) _sync(r);
         }
         for (uint256 k; k < 40; ++k) {
-            vm.roll(block.number + 1);
-            vm.warp(block.timestamp + 12);
+            vm.roll(vm.getBlockNumber() + 1);
+            vm.warp(vm.getBlockTimestamp() + 12);
             _deliverDue();
             try pool.processAcquisitions(10) {} catch {}
         }

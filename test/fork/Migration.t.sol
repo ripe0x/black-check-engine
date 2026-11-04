@@ -55,7 +55,7 @@ contract MigrationForkTest is ForkBase {
         // a quarter of the game's buybacks ongoing, so this running game has burned some (launch: all wait for wins, D74)
         govern(address(sys.burner), abi.encodeCall(CollectionBurner.setMilestoneBps, (7_500)));
         playMany(bob, 60, SEED); // a draw sequence with no early large prize, so the game has distributed surplus
-        vm.warp(block.timestamp + 1 hours);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
         vm.prank(keeper);
         sys.burner.process(0); // some coins burned; the rest stays committed
         // two more Apes bought from holders at the standing bid
@@ -100,14 +100,14 @@ contract MigrationForkTest is ForkBase {
     function _authorize(address s) internal {
         vm.prank(council);
         m.propose(s);
-        vm.warp(block.timestamp + 72 hours);
+        vm.warp(vm.getBlockTimestamp() + 72 hours);
     }
 
     /// Settles the requests in flight (carol's randomness arrives, dave's never does) and runs retirement to its end.
     function _settle() internal {
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(pendingCarol, 424_242);
-        vm.roll(block.number + 300); // past dave's randomness deadline
+        vm.roll(vm.getBlockNumber() + 300); // past dave's randomness deadline
         for (uint256 i; i < 30 && !sys.game.retired(); ++i) {
             vm.prank(keeper);
             sys.game.retireStep();
@@ -126,7 +126,7 @@ contract MigrationForkTest is ForkBase {
         snap = _snapshot();
         uint256 ownerEth = owner.balance;
         for (uint256 i; i < 3; ++i) {
-            (uint128 r,,,,) = sys.poolOwner.nfts(apeIds[i]);
+            (uint128 r,,,,,) = sys.poolOwner.nfts(apeIds[i]);
             refs[i] = r;
         }
         MockSuccessor s = _successor();
@@ -153,7 +153,7 @@ contract MigrationForkTest is ForkBase {
         vm.deal(bob, total);
         vm.prank(bob);
         vm.expectRevert();
-        pool.acquire{value: total}(bob, fee, 0, 10_000, version, block.timestamp + 1 hours);
+        pool.acquire{value: total}(bob, fee, 0, 10_000, version, vm.getBlockTimestamp() + 1 hours);
         // nothing moves before V1 has settled every request
         vm.expectRevert(MigrationAuthority.NotSettled.selector);
         m.migrateApes(10);
@@ -193,7 +193,7 @@ contract MigrationForkTest is ForkBase {
         assertEq(m.migrateApes(10), 0, "nothing left");
         for (uint256 i; i < 3; ++i) {
             assertEq(IERC721Lite(cfg.collection).ownerOf(apeIds[i]), address(s), "same token, at the successor");
-            (uint128 ref,,,,) = sys.poolOwner.nfts(apeIds[i]);
+            (uint128 ref,,,,,) = sys.poolOwner.nfts(apeIds[i]);
             assertEq(ref, refs[i], "its V1 record stays readable");
         }
         assertEq(s.apeCount(), 3);
@@ -219,7 +219,7 @@ contract MigrationForkTest is ForkBase {
         assertEq(sys.burner.reserve(), 0, "the milestone reserve is spent once V1 can win nothing");
         assertEq(sys.burner.milestoneBalance(), reserve);
         uint256 burnedBefore = sys.burner.totalBurned();
-        vm.warp(block.timestamp + 1 hours);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
         vm.prank(keeper);
         sys.burner.process(0);
         assertGt(sys.burner.totalBurned(), burnedBefore, "buy-and-burn continues");
@@ -250,15 +250,15 @@ contract MigrationForkTest is ForkBase {
         m.propose(trader);
         vm.prank(council);
         m.propose(address(s));
-        assertEq(m.executableAt(), block.timestamp + 72 hours);
+        assertEq(m.executableAt(), vm.getBlockTimestamp() + 72 hours);
         assertEq(m.pendingCodeHash(), address(s).codehash, "its code is pinned");
-        vm.warp(block.timestamp + 72 hours - 1);
+        vm.warp(vm.getBlockTimestamp() + 72 hours - 1);
         vm.expectRevert(MigrationAuthority.TooEarly.selector);
         m.execute();
         // the owner can withdraw it
         vm.prank(council);
         m.propose(address(0));
-        vm.warp(block.timestamp + 2 days);
+        vm.warp(vm.getBlockTimestamp() + 2 days);
         vm.expectRevert(MigrationAuthority.NothingPending.selector);
         m.execute();
         assertFalse(sys.game.retiring());
@@ -298,11 +298,11 @@ contract MigrationForkTest is ForkBase {
         m.proposeFeeRecipient(trader);
         vm.prank(council);
         m.proposeFeeRecipient(address(splitter));
-        assertEq(m.feeExecutableAt(), block.timestamp + 72 hours);
-        vm.warp(block.timestamp + 72 hours - 1);
+        assertEq(m.feeExecutableAt(), vm.getBlockTimestamp() + 72 hours);
+        vm.warp(vm.getBlockTimestamp() + 72 hours - 1);
         vm.expectRevert(MigrationAuthority.TooEarly.selector);
         m.executeFeeRecipient();
-        vm.warp(block.timestamp + 1);
+        vm.warp(vm.getBlockTimestamp() + 1);
         vm.prank(trader);
         m.executeFeeRecipient(); // anyone
         assertEq(sys.hook.feeRecipient(), address(splitter));
@@ -387,12 +387,12 @@ contract MigrationForkTest is ForkBase {
     /// the winner later takes the refund instead, the Ape follows the others to the successor.
     function test_quarantinedApeFollowsLater() public {
         // clear the queue first (the scenario's draws in flight), then win an Ape with a delivery that fails
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         deliverWord(pendingCarol, 1);
-        vm.roll(block.number + 300);
+        vm.roll(vm.getBlockNumber() + 300);
         pool.processAcquisitions(10);
         uint256 r = pull(carol);
-        vm.roll(block.number + 3);
+        vm.roll(vm.getBlockNumber() + 3);
         vm.mockCallRevert(cfg.collection, abi.encodeWithSignature("transferFrom(address,address,uint256)"), "");
         deliverWord(r, wordFor(type(uint256).max));
         pool.processAcquisitions(10);
@@ -405,7 +405,7 @@ contract MigrationForkTest is ForkBase {
         _settle();
         assertEq(m.migrateApes(10), 2, "the two Apes not in quarantine");
         // carol takes the refund after FWA's window; the Ape is recovered and migrated
-        vm.warp(block.timestamp + 7 days + 1);
+        vm.warp(vm.getBlockTimestamp() + 7 days + 1);
         vm.prank(carol);
         pool.refundFailedDelivery(listingId);
         // a keeper's retirement step books the refunded request: the Ape returns to custody (anyone may also call
