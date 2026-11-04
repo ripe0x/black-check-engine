@@ -371,7 +371,7 @@ RET1=$(cast call "$VAULT" "returnedFromGame()(uint256)" --rpc-url "$RPC" | cut -
 CAP=$(cast call "$SUCC" "capitalReceived()(uint256)" --rpc-url "$RPC" | cut -d' ' -f1)
 # wei amounts exceed bash's 64-bit arithmetic: compare in python
 CONS=$(python3 -c "import sys; c,v,r1,r0=map(int,sys.argv[1:]); print(f'{c} = vault before {v} + returned by the game {r1-r0}: ' + ('exact' if c==v+r1-r0 else 'MISMATCH'))" "$CAP" "$V0" "$RET1" "$RET0")
-say "   successor $SUCC: Checks $(cast call "$SUCC" "apeCount()(uint256)" --rpc-url "$RPC"), capital $CONS; V1 vault left $(cast balance "$VAULT" --rpc-url "$RPC")"
+say "   successor $SUCC: Checks $(cast call "$SUCC" "apeCount()(uint256)" --rpc-url "$RPC") (V1 won $(cast call "$POOL_OWNER" "wonCount()(uint256)" --rpc-url "$RPC"), sold $(cast call "$POOL_OWNER" "soldCount()(uint256)" --rpc-url "$RPC"), migrated $(cast call "$POOL_OWNER" "migratedCount()(uint256)" --rpc-url "$RPC"), registered $(cast call "$POOL_OWNER" "registeredCount()(uint256)" --rpc-url "$RPC")), capital $CONS; V1 vault left $(cast balance "$VAULT" --rpc-url "$RPC")"
 say "   committed buyback ETH stays in the burner: $B0 -> $(cast balance "$BURNER" --rpc-url "$RPC") (a migration never moves it)"
 F0=$(cast call "$SUCC" "feesReceived()(uint256)" --rpc-url "$RPC")
 forge script script/rehearsal/Rehearse.s.sol:Rehearse --sig "trade(address,uint256)" "$TRADER" 1 \

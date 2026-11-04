@@ -28,6 +28,8 @@ contract Postflight is Deploy {
         s.layerTap = vm.parseJsonAddress(json, ".layerTap");
         s.lens = LensT(vm.parseJsonAddress(json, ".lens"));
         s.drawRouter = DrawRouterT(payable(vm.parseJsonAddress(json, ".drawRouter")));
+        s.desk = ChecksDeskT(vm.parseJsonAddress(json, ".desk"));
+        s.council = TimelockT(payable(vm.parseJsonAddress(json, ".council")));
         postflight(c, s, vm.envAddress("DEPLOYER"));
         console2.log("postflight passed");
     }
@@ -46,3 +48,5 @@ import {MigrationAuthority as MigrationAuthorityT} from "../src/migration/Migrat
 import {CollectionGame as CollectionGameT} from "../src/game/CollectionGame.sol";
 import {Lens as LensT} from "../src/periphery/Lens.sol";
 import {DrawRouter as DrawRouterT} from "../src/periphery/DrawRouter.sol";
+import {ChecksDesk as ChecksDeskT} from "../src/checks/ChecksDesk.sol";
+import {TimelockController as TimelockT} from "@openzeppelin/contracts/governance/TimelockController.sol";
