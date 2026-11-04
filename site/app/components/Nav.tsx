@@ -22,6 +22,7 @@ export function Nav() {
   return (
     <header className="nav">
       <Link href="/" className="brand">{collectionMeta.game}</Link>
+      <Link href="/checks/" className="nav-ticker">CHECKS</Link>
       <Link href="/coin/" className="nav-ticker">{collectionMeta.ticker}</Link>
       <Wallet />
     </header>

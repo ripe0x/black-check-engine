@@ -8,7 +8,7 @@ const src = fileURLToPath(new URL(`../../deployments/${name}.json`, import.meta.
 const out = fileURLToPath(new URL("../app/lib/deployment.generated.json", import.meta.url));
 const zero = "0x0000000000000000000000000000000000000000";
 const keys = ["game", "vault", "poolOwner", "burner", "hook", "liquidity", "token", "lens", "drawRouter",
-  "migration", "sunset", "adapter", "collection", "owner", "admin", "packs"];
+  "migration", "sunset", "adapter", "collection", "owner", "admin", "packs", "desk", "council"];
 let rec = { chainId: 1, deployed: false };
 if (existsSync(src)) {
   rec = { ...JSON.parse(readFileSync(src, "utf8")), deployed: true };

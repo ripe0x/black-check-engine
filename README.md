@@ -1,33 +1,46 @@
-# Checks Survival Protocol: Claude Code autonomous project starter
+# Checks Survival Protocol (working title)
 
-This is a project working package. It includes the current design baseline and persistent instructions for an agent to build, test, critique, and refine the protocol over multiple sessions without repeatedly asking the founder for routine choices.
+An autonomous game for Checks on Ethereum, with its own fixed-supply coin (name and ticker unresolved; placeholders are
+refused by the deployment). Checks sit in an FWA V2 pool as prizes beside ETH-backed Shapes and Draw Packs; players pay
+ETH to draw. A Check that survives draws becomes cheaper to win and, after enough of them, eligible for canonical
+composition up the tiers to a Black Check. Trading fees on the coin buy Checks; game surplus buys and burns the coin when
+a Check is won. Built on ripe0x/collection-games (409ca75); the first implementation is archived at tag `rc2`.
 
-## Start in Claude Code
+**Not audited. Not deployed. Launch requires a satisfactory audit, legal review, a coin name, and council keys.**
 
-1. Clone this repository with `git clone https://github.com/ripe0x/black-check-engine.git`.
-2. Open a terminal in the cloned repository.
-3. Open Claude Code in this directory. Use Auto permission mode where supported. Do not use permission bypass, do not provide wallet keys, and do not grant mainnet transaction authority.
-4. Paste the contents of `START_PROMPT.md` as your first message.
-5. Let the agent follow `docs/ROADMAP.md`, making local commits and updating `docs/STATUS.md` as it progresses.
-6. At convenient intervals, review the top entries in `docs/DECISIONS.md`, then respond with a single grouped message. The agent should not need constant replies.
+Start with docs/STATUS.md (where the work stands and how to resume), docs/REBASE_PLAN.md (the plan and progress),
+docs/ARCHITECTURE.md and docs/ADMIN.md (the system and who can do what), docs/DECISIONS.md (every decision, the review
+queue first). Tracking PR: ripe0x/black-check-engine#1. Provenance: NOTICE.md.
 
-When a Claude Code session ends, reopen the same repository and say: `Read CLAUDE.md and docs/STATUS.md, then continue the next safe task. Keep logging material decisions for later review.`
+```
+src/core        Admin (owner + council), Governed, FundingVault (live bid), CollectionPoolOwner (Checks custody,
+                survival, decay, the FWA pool)
+src/checks      ChecksDesk (composition, Black Check formation, buyouts)
+src/game        CollectionGame (the ledger, board, keeper pay)
+src/token       CollectionToken, CollectionHook, ProtocolLiquidity
+src/treasury    CollectionBurner
+src/migration   MigrationAuthority, Sunset
+src/periphery   DrawRouter, Lens, SeaportAdapter, FwaFeeRoutes, LayerTap
+script/         DeploySystem (deploy + postflight, council timelock), LaunchConfig, Deploy, rehearse-anvil.sh
+test/           fork (block 26,337,000), invariant, scenario, unit
+sim/            checks_market.py (D016) and collection-games' models
+keeper/         permissionless keeper (Node, viem), incl. the free deterministic composition
+site/           player site (Next.js static export; not published)
+docs/base/      collection-games' documents, for reference
+```
 
-## File priorities
+## Build and test
 
-1. `CLAUDE.md`: how the agent should operate and which founder decisions are settled.
-2. `docs/FUNCTIONAL_SPEC.md`: the latest intended product mechanics and design baseline.
-3. `docs/ROADMAP.md`: phases and acceptance criteria.
-4. `docs/DECISIONS.md`: review queue and design change record.
-5. `docs/STATUS.md`: verified progress and resumability across sessions.
-6. `reference/`: earlier research and an outdated controller experiment. Informational only. Do not use it as proof of production security.
+```
+git submodule update --init --recursive
+forge build                      # via-IR (slow: about 20-30 minutes from clean)
+anvil --fork-url https://mainnet.gateway.tenderly.co --fork-block-number 26337000 --port 8546 &
+MAINNET_RPC_URL=http://127.0.0.1:8546 forge test --threads 3 --no-match-path 'test/scenario/Throughput.t.sol'
+FOUNDRY_PROFILE=fast forge test ...   # iteration only (no IR; the EIP-170 size test fails there by design)
+python3 sim/checks_market.py
+cd keeper && npm ci && node --test test/policy.test.mjs
+cd site && npm ci && npm run abi && npm run typecheck && npm run build
+FORK_URL=https://mainnet.gateway.tenderly.co script/rehearse-anvil.sh
+```
 
-The named coin and final ticker remain unresolved. The agent should use an internal placeholder and log the branding decision for a later user review rather than blocking implementation.
-
-## Review the work rather than supervising each step
-
-Ask the agent for: `Show the top decisions requiring my review, each with your recommendation, the tradeoff, and whether anything is blocked.`
-
-You can approve or redirect multiple decisions at once. The agent should update the spec and decisions log accordingly, then keep working.
-
-No deploy or launch instruction is included in this package.
+`CLAUDE.md` holds the operating instructions and the founder's invariants.

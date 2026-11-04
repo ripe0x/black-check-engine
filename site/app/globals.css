@@ -687,3 +687,9 @@ main:has(> .home) { max-width: none; padding: 0 0 64px; }
 .dd-won .dd-burn { padding: 8px 14px; border-radius: 99px; background: rgba(255,255,255,.14); color: #fff; font: 700 13px/1.3 "Manrope", sans-serif; }
 .dd-won .r4 { animation: dd-rise .45s ease-out .91s both; }
 @media (prefers-reduced-motion: reduce) { .pot.burning .pot-head i, .dd-won .r4 { animation: none; } }
+
+/* the Checks page: a table that scrolls inside its own box on a phone, never the page */
+.table-wrap { overflow-x: auto; max-width: 100%; }
+.table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.table th, .table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.table th { color: var(--muted); font-weight: 600; }

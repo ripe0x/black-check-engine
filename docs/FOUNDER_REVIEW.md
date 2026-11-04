@@ -1,5 +1,10 @@
 # Founder review (grouped)
 
+> **Describes the pre-rebase implementation archived at tag `rc2` (UUPS `Engine`), not the current code.** The
+> current architecture is docs/ARCHITECTURE.md and docs/ADMIN.md (rebase on collection-games, docs/REBASE_PLAN.md);
+> this document is replaced in phase R9.
+
+
 Branch `dev`, local only. Nothing deployed, broadcast, spent, published or pushed.
 
 ## Decisions (answered 2026-10-30)

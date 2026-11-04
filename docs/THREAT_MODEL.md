@@ -1,5 +1,10 @@
 # Threat model and authority
 
+> **Describes the pre-rebase implementation archived at tag `rc2` (UUPS `Engine`), not the current code.** The
+> current architecture is docs/ARCHITECTURE.md and docs/ADMIN.md (rebase on collection-games, docs/REBASE_PLAN.md);
+> this document is replaced in phase R9.
+
+
 Scope: custody of Checks, Shapes and ETH; upgrades; FWA pool migration. Testing is not an audit.
 
 ## Assets

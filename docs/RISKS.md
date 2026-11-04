@@ -1,5 +1,10 @@
 # Risk register and executable experiments
 
+> **Describes the pre-rebase implementation archived at tag `rc2` (UUPS `Engine`), not the current code.** The
+> current architecture is docs/ARCHITECTURE.md and docs/ADMIN.md (rebase on collection-games, docs/REBASE_PLAN.md);
+> this document is replaced in phase R9.
+
+
 Evidence block: Ethereum mainnet 26,302,000 (2026-10-29). "Fact" = read on that fork or from verified source.
 Each risk names the experiment that settles it. Status is updated as experiments run.
 

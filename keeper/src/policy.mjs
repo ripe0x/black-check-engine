@@ -26,6 +26,27 @@ export function shouldAct({ mode, ageSeconds, basefeeWei, maxBasefeeWei, backupA
 }
 
 /**
+ * The free deterministic composition the keeper may run now (D008: once nobody has chosen within the grace, the
+ * deterministic outcome is free and anyone may run it), or null. One per tick. `listings`: [{ listingId, tokenId,
+ * tier, draws }] of open Check listings; `drawsToCompose` per tier below Black; `grace` in draws.
+ * - two Checks of a tier at most 5 (80 to 4), both past threshold + grace: keep the one with more survived draws (the
+ *   lower token id on a tie), as the desk's free rule requires;
+ * - 64 singles all past threshold + grace: the 64 lowest token ids, ascending (the first survives as the Black Check).
+ */
+export function freeComposition(listings, drawsToCompose, grace) {
+  const ready = (l) => l.tier < 7 && l.draws > 0n && l.draws >= BigInt(drawsToCompose[l.tier]) + BigInt(grace);
+  const singles = listings.filter((l) => l.tier === 6 && ready(l)).sort((a, b) => (a.tokenId < b.tokenId ? -1 : 1));
+  if (singles.length >= 64) return { name: "formBlack", args: [singles.slice(0, 64).map((l) => l.listingId)] };
+  for (let tier = 0; tier <= 5; ++tier) {
+    const c = listings
+      .filter((l) => l.tier === tier && ready(l))
+      .sort((a, b) => (a.draws !== b.draws ? (a.draws > b.draws ? -1 : 1) : a.tokenId < b.tokenId ? -1 : 1));
+    if (c.length >= 2) return { name: "compose", args: [c[0].listingId, c[1].listingId, false] };
+  }
+  return null;
+}
+
+/**
  * The jobs to try this tick, in order. `state` is read on chain; every job is still simulated before sending.
  * @param {object} s
  */
@@ -48,6 +69,7 @@ export function jobs(s) {
   if (s.poolExists) out.push({ name: "sync" });
   if (!s.activated && s.ready) out.push({ name: "activate" });
   for (const id of s.unreleasedWins) out.push({ name: "release", args: [id] });
+  if (s.composition) out.push(s.composition); // the free deterministic outcome only (D008)
   if (s.burnerReady) out.push({ name: "buyback" });
   if (s.sweepReady) out.push({ name: "sweep" });
   return out;

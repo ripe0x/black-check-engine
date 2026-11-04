@@ -1,5 +1,10 @@
 # Audit scope
 
+> **Describes the pre-rebase implementation archived at tag `rc2` (UUPS `Engine`), not the current code.** The
+> current architecture is docs/ARCHITECTURE.md and docs/ADMIN.md (rebase on collection-games, docs/REBASE_PLAN.md);
+> this document is replaced in phase R9.
+
+
 Not deployed. `rc1` (commit 0aeea0e) was audited (docs/review/rc1-audit.md). **Frozen candidate: local tag `rc2`,
 commit 6b00eed, branch `dev`: rc1 plus the audit fixes (D011), not re-audited.** Verification:
 docs/receipts/rc2-verification.md.

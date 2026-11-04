@@ -49,6 +49,18 @@ export const migrationAbi = parseAbi([
 export const sunsetAbi = parseAbi(["function flush() returns (uint256)", "function startedAt() view returns (uint256)"]);
 export const poolOwnerAbi = parseAbi([
   "event CollectionWon(uint256 indexed listingId, uint256 indexed tokenId, uint256 refCost, uint256 cashCost)",
+  "function listedCount() view returns (uint256)",
+  "function listedAt(uint256 i) view returns (uint256)",
+]);
+// The Checks desk (composition, Black Check formation): the keeper runs only the free deterministic outcome (D008).
+export const deskAbi = parseAbi([
+  "function listingInfo(uint256 listingId) view returns (uint256 tokenId, uint8 tier, uint256 draws)",
+  "function composeParams() view returns ((uint32[7] drawsToCompose, uint32 graceDraws, uint256[7] composeBurn))",
+  "function composeCost(uint256 keepListing, uint256 burnListing, bool swap) view returns (uint256)",
+  "function compose(uint256 keepListing, uint256 burnListing, bool swap)",
+  "function formBlack(uint256[] listingIds)",
+  "error NotEligible()",
+  "error BadInput()",
 ]);
 export const fwaPoolAbi = parseAbi([
   "function processAcquisitions(uint256 maxCount) returns (uint256)",

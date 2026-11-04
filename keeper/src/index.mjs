@@ -1,4 +1,4 @@
-// Collection Games keeper. Every job is simulated first; a job that would revert (NoWork, TooSoon, NotReady,
+// Checks game keeper (from collection-games' keeper; the free deterministic composition added, D008). Every job is simulated first; a job that would revert (NoWork, TooSoon, NotReady,
 // PriceMoved, NotQualifying, ...) is skipped. The game pays this keeper's useful calls like anyone else's.
 //
 // Environment (no secrets in files): RPC_URL, KEEPER_PRIVATE_KEY (or KEEPER_ADDRESS on a local anvil with an
@@ -11,8 +11,8 @@ import { readFileSync } from "node:fs";
 import { createPublicClient, createWalletClient, http, parseGwei } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { mainnet } from "viem/chains";
-import { gameAbi, vaultAbi, burnerAbi, migrationAbi, sunsetAbi, poolOwnerAbi, fwaPoolAbi } from "./abi.mjs";
-import { shouldAct, jobs } from "./policy.mjs";
+import { gameAbi, vaultAbi, burnerAbi, migrationAbi, sunsetAbi, poolOwnerAbi, fwaPoolAbi, deskAbi } from "./abi.mjs";
+import { shouldAct, jobs, freeComposition } from "./policy.mjs";
 
 // the decoded custom error when there is one (NothingToSend, SweepTooEarly, NoWork, ...), else the first message line
 const reason = (e) => e.walk?.((x) => x.data?.errorName)?.data?.errorName ?? (e.shortMessage ?? e.message).split("\n")[0];
@@ -102,8 +102,25 @@ async function state() {
     // a log scan failure only delays the fallback milestone release; every other job still runs
     console.error("win scan failed:", e.shortMessage ?? e.message);
   }
+  // the free deterministic composition, if any (D008): read every open Check listing's tier and survival
+  let composition = null;
+  if (dep.desk && activated && !retiring && !retired) {
+    try {
+      const n = await read(dep.poolOwner, poolOwnerAbi, "listedCount");
+      const listings = [];
+      for (let i = 0n; i < n; ++i) {
+        const listingId = await read(dep.poolOwner, poolOwnerAbi, "listedAt", [i]);
+        const [tokenId, tier, draws] = await read(dep.desk, deskAbi, "listingInfo", [listingId]);
+        if (tier !== 255) listings.push({ listingId, tokenId, tier: Number(tier), draws });
+      }
+      const p = await read(dep.desk, deskAbi, "composeParams");
+      composition = freeComposition(listings, p.drawsToCompose, p.graceDraws);
+    } catch (e) {
+      console.error("composition scan failed:", e.shortMessage ?? e.message);
+    }
+  }
   return { activated, retiring, retired, ready, poolExists: pool !== ZERO, pool, burnerReady, runAt, unreleasedWins,
-    sweepReady, reserve, sunsetDue, block };
+    sweepReady, reserve, sunsetDue, block, composition };
 }
 
 function callOf(name, s, args) {
@@ -119,6 +136,8 @@ function callOf(name, s, args) {
     case "migrateApes": return { address: dep.migration, abi: migrationAbi, functionName: "migrateApes", args: [10n] };
     case "migrateCapital": return { address: dep.migration, abi: migrationAbi, functionName: "migrateCapital", args: [] };
     case "flushSunset": return { address: dep.sunset, abi: sunsetAbi, functionName: "flush", args: [] };
+    case "compose": return { address: dep.desk, abi: deskAbi, functionName: "compose", args };
+    case "formBlack": return { address: dep.desk, abi: deskAbi, functionName: "formBlack", args };
   }
   throw new Error(`unknown job ${name}`);
 }

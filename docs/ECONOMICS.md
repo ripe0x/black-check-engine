@@ -1,5 +1,10 @@
 # Economics (Phase 3)
 
+> **Describes the pre-rebase implementation archived at tag `rc2` (UUPS `Engine`), not the current code.** The
+> current architecture is docs/ARCHITECTURE.md and docs/ADMIN.md (rebase on collection-games, docs/REBASE_PLAN.md);
+> this document is replaced in phase R9.
+
+
 Model: `sim/model.py` (stdlib Python, 60 seeded runs per scenario, 2 years). Results: `sim/results/phase3.md`.
 A model, not evidence of real behavior. FWA's fee, selection and owner split are reproduced from the verified
 source and match the fork receipts (E2). Market anchor: Checks Originals floor about 0.25 ETH (late October 2026,
