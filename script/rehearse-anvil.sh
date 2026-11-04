@@ -351,8 +351,10 @@ cast send "$MIG" "execute()" --from "$TRADER" --unlocked --rpc-url "$RPC" >>"$LO
 cast rpc evm_increaseTime 259200 --rpc-url "$RPC" >/dev/null && cast rpc anvil_mine 1 --rpc-url "$RPC" >/dev/null
 cast send "$MIG" "execute()" --from "$TRADER" --unlocked --rpc-url "$RPC" >>"$LOG" 2>&1
 say "   executed by a third party: V1 retiring $(cast call "$GAME" "retiring()(bool)" --rpc-url "$RPC"), FWA purchases $(cast call "$POOL" "localPurchasesEnabled()(bool)" --rpc-url "$RPC"), fee recipient $(cast call "$HOOK" "feeRecipient()(address)" --rpc-url "$RPC") (the successor)"
-cast send "$MIG" "migrateChecks(uint256)" 10 --from "$TRADER" --unlocked --rpc-url "$RPC" >>"$LOG" 2>&1 \
-  && say "   ERROR: NFTs moved before V1 settled" || say "   NFTs before V1 has settled: refused"
+OUT=$(cast send "$MIG" "migrateApes(uint256)" 10 --from "$TRADER" --unlocked --rpc-url "$RPC" 2>&1) \
+  && say "   ERROR: NFTs moved before V1 settled" \
+  || { echo "$OUT" >>"$LOG"; [[ "$OUT" == *"$(cast sig "NotSettled()")"* || "$OUT" == *NotSettled* ]] \
+    && say "   NFTs before V1 has settled: refused (NotSettled)" || say "   ERROR: refused for another reason"; }
 # the first draw in flight gets its randomness; the second never does and expires into a refund
 cast rpc anvil_mine 3 --rpc-url "$RPC" >/dev/null
 forge script script/rehearsal/Rehearse.s.sol:Rehearse --sig "fulfillSeq(uint64,uint256)" "$((SEQ - 1))" 99991 \
@@ -367,7 +369,10 @@ for _ in $(seq 1 40); do
 done
 say "   V1 settled and unwound: retired $(cast call "$GAME" "retired()(bool)" --rpc-url "$RPC"), unsettled $(cast call "$POOL" "unsettledAcquisitionCount()(uint256)" --rpc-url "$RPC"), prizes live $(cast call "$GAME" "liveCount()(uint256)" --rpc-url "$RPC"), player refund credit $(cast call "$POOL" "acquisitionRefundCredit(address)(uint256)" "$PLAYER" --rpc-url "$RPC")"
 # the keeper bot's retired jobs migrate the Checks and capital on its own; these calls finish whatever is left
-cast send "$MIG" "migrateChecks(uint256)" 10 --from "$TRADER" --unlocked --rpc-url "$RPC" >>"$LOG" 2>&1 || true
+for _ in 1 2 3; do
+  [[ "$(cast call "$POOL_OWNER" "custodyCount()(uint256)" --rpc-url "$RPC" | cut -d' ' -f1)" == "0" ]] && break
+  cast send "$MIG" "migrateApes(uint256)" 10 --from "$TRADER" --unlocked --rpc-url "$RPC" >>"$LOG" 2>&1 || true
+done
 cast send "$MIG" "migrateCapital()" --from "$TRADER" --unlocked --rpc-url "$RPC" >>"$LOG" 2>&1 || true
 RET1=$(cast call "$VAULT" "returnedFromGame()(uint256)" --rpc-url "$RPC" | cut -d' ' -f1)
 CAP=$(cast call "$SUCC" "capitalReceived()(uint256)" --rpc-url "$RPC" | cut -d' ' -f1)
