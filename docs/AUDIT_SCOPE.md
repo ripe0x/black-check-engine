@@ -1,81 +1,69 @@
-# Audit scope
+# Audit scope: Checks Survival Protocol on the collection-games base
 
-> **Describes the pre-rebase implementation archived at tag `rc2` (UUPS `Engine`), not the current code.** The
-> current architecture is docs/ARCHITECTURE.md and docs/ADMIN.md (rebase on collection-games, docs/REBASE_PLAN.md);
-> this document is replaced in phase R9.
+Candidate: branch `claude/wizardly-shannon-440owk` (PR ripe0x/black-check-engine#1). Not deployed. This replaces the
+rc2 scope (UUPS `Engine`, archived at tag `rc2`).
 
+## What changed and what did not
 
-Not deployed. `rc1` (commit 0aeea0e) was audited (docs/review/rc1-audit.md). **Frozen candidate: local tag `rc2`,
-commit 6b00eed, branch `dev`: rc1 plus the audit fixes (D011), not re-audited.** Verification:
-docs/receipts/rc2-verification.md.
+The base is ripe0x/collection-games at 409ca75 (D92), which went through a fresh-discovery audit and final rounds 1-8
+(its `audit/` directory at that commit). Those rounds cover its code with its Ape settings. **Every line below is
+unaudited**, and the audit must cover the diff against 409ca75, not only new files.
 
-## In scope (1,603 lines of Solidity)
-
-| File | Lines | Role |
+| File | Lines changed (diff -c) | What |
 | --- | --- | --- |
-| src/core/Engine.sol | 654 | UUPS custody and lifecycle: listing, decay, composition, buyouts, standing bid, Shape restock, surplus release, migration, roles |
-| src/fwa/FwaV2Controller.sol | 191 | Immutable owner of one FWA V2 pool and its purchase gate; O(1) survival derivation (C010) |
-| src/venue/VenueHook.sol | 146 | Uniswap v4 hook: flat ETH fee to acquisitions |
-| src/venue/VenueLiquidity.sol | 134 | Locks the whole coin supply as single-sided v4 liquidity |
-| src/treasury/Burner.sol | 107 | Ownerless buy-and-burn of released surplus, chunk bounded below sandwich profitability |
-| src/periphery/FwaFeeBuyer.sol | 58 | Buys FWA's pool-creation fee with ETH (deployment helper) |
-| src/token/Coin.sol | 37 | Fixed-supply ERC20 with burnFrom |
-| src/interfaces/*.sol | 276 | Interfaces to FWA, Checks and controllers |
-| script/DeploySystem.sol, script/LaunchConfig.sol | — | The single deployment routine and postflight; launch values |
+| `src/checks/ChecksDesk.sol` | new, 240 | Composition, Black Check formation, ETH and coin buyouts (from rc2 `Engine`) |
+| `src/interfaces/IChecks.sol` | new, 75 | Checks Originals and Editions subset (from rc2) |
+| `src/core/CollectionPoolOwner.sol` | 538 | Tier, council schedule, survival counters (listed - withdrawn - active), decay per survived draw, schedule repricing both ways, custody index, desk operations with chunked withdrawals, carried survival at retirement |
+| `src/core/FundingVault.sol` | 77 | 80-Check-only purchases, `sellEdition`, the 120%-of-schedule price cap |
+| `src/core/Admin.sol`, `Governed.sol` | 30, 12 | The council authority (`council`, `setCouncil`, `onlyCouncil`) |
+| `src/game/CollectionGame.sol` | 13 | Markup floor 5%, keeper pay caps |
+| `src/token/CollectionToken.sol` | 19 | `burnFrom`; allowlist and unrestriction council-only |
+| `src/token/CollectionHook.sol`, `ProtocolLiquidity.sol` | 5, 6 | `setLayer` council-only; owner or council opens the market |
+| `src/migration/MigrationAuthority.sol` | 7 | Proposals council-only |
+| `src/migration/Sunset.sol`, `src/periphery/Lens.sol` | 7, 7 | The record's new layout |
+| `script/DeploySystem.sol`, `LaunchConfig.sol`, `Deploy.s.sol` | | The council TimelockController, the desk, the Checks config, postflight (council roles, schedule, desk, name gate) |
 
-Out of scope: keeper/ (untrusted, permissionless operator), site/ (static UI), sim/ (model), test/.
+Unchanged from 409ca75 (audited there): `CollectionBurner`, `DrawRouter`, `SeaportAdapter`, `FwaFeeRoutes`,
+`LayerTap`, `IFWA`, and the Draw Packs build.
 
-## Pinned dependencies
-
-| Dependency | Version | Trust |
-| --- | --- | --- |
-| OpenZeppelin Contracts | v5.1.0 | TimelockController, UUPSUpgradeable, ERC1967Proxy, Initializable |
-| solady | v0.1.26 | ERC20, SafeTransferLib, ReentrancyGuard |
-| Uniswap v4-core / v4-periphery | 59d3ecf / 60cd938 | PoolManager (mainnet 0x0000…8A90), BaseHook, HookMiner, LiquidityAmounts |
-| FWA V2 factory / clone / VRF service | mainnet, runtime hashes pinned in test/fork/Pins.t.sol | holds listed NFTs and player funds; factory owner controls edge, cooldown, global switches |
-| Checks Originals, Editions, Shapes | mainnet, hashes pinned | canonical composition, migration, Shape backing |
-| Compiler | solc 0.8.28, via_ir, optimizer 200, evm cancun | |
-
-## Trust model and invariants to check
-
-docs/THREAT_MODEL.md lists actors, powers, attack paths and residual trust. Properties the tests assert and an audit
-should try to break:
-1. The operator can only halt; no path for the operator, guardian or keepers to move NFTs or ETH to themselves.
-2. Every upgrade, controller change, schedule or parameter change needs a council proposal and 7 days.
-3. Survival equals prize allocations while listed (listed − withdrawn − FWA `activeListingCount`); nothing else moves it.
-4. No maintenance, sale or migration while an FWA draw is unsettled.
-5. `address(engine).balance >= acquisitionBudget` always; bids spend only the budget, within a weekly cap.
-6. Coin-paid actions burn exactly once and never on failure; coin supply only falls.
-7. Venue fees and released surplus reach only the engine's budget and the burner.
-
-## Known limitations (by design, disclosed)
-
-- A council majority can upgrade the engine to anything after 7 days if the guardian does not cancel.
-- Prices lag the market by at least the timelock delay (D003); coin buyouts launch disabled (D006).
-- Buy-and-burn has no oracle. Instead the burner's chunk is bounded so a sandwich costs more in venue fees than it
-  gains (D010, D011); this rests on the venue fee being charged on both legs.
-- A player who names a purchaser that cannot use an NFT loses their own prize. The FWA purchase gate refuses only the
-  known contracts that would strand it in FWA's delivery quarantine (D011).
-- The weekly bid cap is epoch-aligned (up to 2× across a boundary), bounded by the budget.
-- Keepers are unpaid. NFTs sent to the engine directly are quarantined (no sweep, and keepers do not see them).
-- Opening fee curve against launch snipers is not implemented (D009).
-- The venue fee (1%) and opening tick (161,200) in `LaunchConfig` are placeholders the founder will finalise before
-  deployment; both are immutable once deployed. Compose coin burns, coin buyout prices (0, disabled), bid cap and
-  burner values are timelock-settable placeholders.
-- Approving a burner trusts the council's check that `Burner.venue()` is the canonical venue.
-
-## Reproducing the evidence
+## Build and run
 
 ```
 git submodule update --init --recursive
-forge build
-forge test --match-path 'test/fork/*.t.sol'          # mainnet fork at block 26,302,000 via MAINNET_RPC_URL
-forge test --match-path test/unit/Decay.t.sol
-FOUNDRY_INVARIANT_FAIL_ON_REVERT=true FOUNDRY_INVARIANT_RUNS=16 FOUNDRY_INVARIANT_DEPTH=60 \
-  forge test --match-path test/fork/Invariant.t.sol
-python3 sim/model.py
+forge build                                   # via-IR, solc 0.8.28, cancun; about 33 minutes from clean
+anvil --fork-url <archive rpc> --fork-block-number 26337000 --port 8546 &
+MAINNET_RPC_URL=http://127.0.0.1:8546 forge test --threads 3 --no-match-path 'test/scenario/Throughput.t.sol'
 ```
 
-Prior reviews (independent model-based reviews, not audits): docs/review/phase2-security-review.md,
-docs/review/phase4-security-review.md, docs/review/venue-burner-deploy-review.md, docs/review/rc-repairs-review.md.
-Static analysis: docs/review/slither-triage.md.
+Fork block 26,337,000: after FWA reopened V2 pool creation (D014). Only `test/fork/MigrationCommunity.t.sol` opens FWA
+switches locally (the community factory, off on mainnet at this block).
+
+## Properties to break
+
+1. **No single key moves value (invariants 10, 11; D012).** The owner cannot withdraw custody or ETH, redirect fees,
+   change a Check's worth (schedule, listing rule, buyout prices), change the coin's venue, or approve new code. The
+   council can, only through its 7-day timelock (guardian cancels) and, for a migration or fee recipient, the
+   MigrationAuthority's further 72 hours with the code pinned. Look for indirect extraction through owner settings
+   (keeper pay, board pattern, bid parameters, composition parameters, pause and sunset ordering).
+2. **Survival is FWA's truth.** `allocated() = listedTotal - withdrawnTotal - activeListingCount` must equal the
+   number of draws that allocated a prize. Every listing and withdrawal must go through the counters; a staged
+   listing, a withdrawal path that skips the counter, a refund or recovery path, or a migration would break it.
+   Composition eligibility and decay both read it.
+3. **The desk moves only what it should.** `deskCompose`, `deskFormBlack` and `deskRelease` take only open, active
+   Check listings with nothing unsettled; composition burns exactly what `composeCost` says, or nothing on failure; a
+   buyout pays at least schedule + 10% to the vault or burns the council's coin price.
+4. **Pricing and exposure.** Schedule changes reprice both ways; the exposure sum must match the open listings'
+   terms after any sequence of listing, reprice, win, refund, composition, buyout and retirement.
+5. **Acquisition.** The vault books nothing above 120% of the 80-Check schedule, buys only 80-Check Originals, and an
+   Edition sale lands the Original in custody with nothing stranded in the vault.
+6. **Everything from collection-games' scope** (docs/base/AUDIT_SCOPE.md) still holds.
+
+## Known issues and accepted limits
+
+- The council majority is trusted with migrations after 7 + 3 days in public (disclosed in docs/ADMIN.md).
+- The schedule is set by the council and lags the market by at least 7 days (rc2 risk carried).
+- A production successor for FWA's community factory is not built; the migration path is proven with a test-only
+  successor.
+- `CollectionPoolOwner` has 980 B of EIP-170 headroom under via-IR.
+- The $LAYER share code is kept but off at launch and council-only.
+- Coin name, ticker, council keys and guardian are unset; the deployment refuses the placeholders.
