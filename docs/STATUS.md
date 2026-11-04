@@ -31,20 +31,24 @@ Branch: `claude/wizardly-shannon-440owk`. The pre-rebase implementation is archi
   price in the sunset) and M-1 (buying back below the vault's purchase price) fixed in 0e02aab, L-2 fixed, L-1/L-3
   recorded (D017). Slither triaged (docs/review/slither-rebase.md, nothing new to fix). Throughput study on the Checks
   board 12/12 (sim/results/throughput.md). Founder review, audit scope and a sealed audit prompt written.
-- Evidence. Via-IR on 0e02aab: build 39 min; suite 283/283 (throughput studies run separately, 12/12); sizes under
-  EIP-170: pool owner 24,069 B (507 B headroom), game 22,392, vault 13,743, token 10,959, hook 7,497, desk 7,193,
-  MigrationAuthority 4,862, Sunset 2,387. Black formation from 64 real singles 8,350,399 gas.
-- Rehearsal (`script/rehearse-anvil.sh`, anvil chain 31337, fork of block 26,337,000) end to end on 0e02aab: deploy and
-  postflight, FWA fee relay and pool, market at the fixed tick, opening-hour trading (11.1 ETH of fees), the live bid
-  and a real 80-Check sold, keeper activation (160 prizes), router and FWA draws, board change, two more Checks bought,
-  fee overflow and a buyback, keeper pay 1.10-1.31x real gas, the fee recipient and the migration each through the
-  council's 7-day timelock then 72 hours (owner and strangers refused), capital handed over exactly. Follow-ups fixed
-  in 4cfd59a (the postflight script did not load the desk and council; the successor's Check count needs the win and
-  migration log); rerun in progress.
+- Rehearsal found a bug (fixed in 186c363): the shown live bid could exceed the 120%-of-schedule purchase cap, so a
+  holder taking it was refused; `liveBid` now stops at the cap. Also fixed: the rehearsal script's own bugs (the
+  postflight script did not load the desk and council; a bulk rename had broken its `migrateApes` call).
+- **Candidate evidence (69ead29; contracts as 186c363).** Forced clean via-IR build 35 min; sizes under EIP-170:
+  pool owner 24,069 B (507 B headroom), game 22,392, vault 13,901, token 10,959, hook 7,497, desk 7,193,
+  MigrationAuthority 4,862, Sunset 2,387. `forge test --threads 2 --no-match-path 'test/scenario/Throughput.t.sol'`
+  on a local anvil fork at 26,337,000: 283/283. Throughput study 12/12 (sim/results/throughput.md). Keeper unit 9/9;
+  site typecheck and build pass. Rehearsal end to end on 186c363 (`script/rehearse-anvil.sh`, chain 31337): deploy and
+  postflight, FWA relay and pool, market at the fixed tick, 11.2 ETH of opening-hour fees, a real 80-Check sold at the
+  bid, activation with 160 prizes, router and FWA draws, board change, two more Checks bought, fee overflow and a
+  buyback, postflight again after play, keeper pay 1.10-1.31x real gas, the fee recipient and the migration each
+  through the council's 7-day timelock then 72 hours (owner and strangers refused), settlement refused before
+  retirement (NotSettled), 3 Checks and the capital handed to the successor exactly. Black formation from 64 real
+  singles 8,350,399 gas.
 
 ## Next executable action
-1. Record the rehearsal rerun; then freeze an `rc3` candidate (tagging is the owner's call: rc1 and rc2 were pushed by
-   the owner).
+1. `rc3` candidate: 69ead29 (tagging is the owner's call: rc1 and rc2 were pushed by the owner). Next work only on
+   review feedback or an audit's findings.
 2. Before any launch: the gates in docs/FOUNDER_REVIEW.md (name, council keys, legal review, human audit, FWA V2
    creation open on the day).
 
