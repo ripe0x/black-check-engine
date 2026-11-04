@@ -174,20 +174,16 @@ contract BidForkTest is ForkBase {
     /// follow the new price.
     function test_risingFloorNeedsNoUpdate() public {
         assertEq(sys.vault.bidParams().maxPrice, 0, "no cap");
+        // the council has moved the 80-Check price with the market (the shown bid stops at 120% of it, D012; that cap
+        // is tested in ChecksAcquisition.t.sol): the bid climbs on its own, slowly above its own ceiling
+        _setSchedule(12 ether);
         accrueFees(40 ether);
         uint256 start = vm.getBlockNumber();
         uint256 bid = riseBidTo(12 ether);
         assertGe(bid, 12 ether, "reached a doubled floor");
         // 4.8 ETH above the 7.2 ETH ceiling at 0.01 ETH per 300 blocks (D82): 480 sweeps, 20 days
         assertApproxEqRel((vm.getBlockNumber() - start) * 12, 20 days, 0.15e18, "slowly above the ceiling");
-        // the bid follows on its own, but no purchase is booked above 120% of the council's price (D012): the council
-        // moves the schedule with the market first
         uint256 id = nextCheckId();
-        vm.expectRevert(FundingVault.OverBudget.selector);
-        this.sellAt(id, 12 ether);
-        uint256[8] memory sched = sys.poolOwner.schedule();
-        sched[0] = 12 ether;
-        councilCall(address(sys.poolOwner), abi.encodeCall(CollectionPoolOwner.setSchedule, (sched)));
         sellCheckAt(id, 12 ether);
         assertEq(sys.vault.activationThreshold(), 9 ether);
         assertEq(sys.vault.bidCeiling(), 14.4 ether, "120% of the new price");
@@ -197,9 +193,17 @@ contract BidForkTest is ForkBase {
         sellCheckAt(id, price);
     }
 
+    /// @dev The council sets the 80-Check price (the vault's purchase cap is 120% of it).
+    function _setSchedule(uint256 price) internal {
+        uint256[8] memory sched = sys.poolOwner.schedule();
+        sched[0] = price;
+        councilCall(address(sys.poolOwner), abi.encodeCall(CollectionPoolOwner.setSchedule, (sched)));
+    }
+
     /// The ceiling (D60, D61): above 120% of the last acquisition price a sweep forwards only `slowSweepWei`; a bid nobody
     /// accepts climbs a tenth as fast instead of piling up. It moves with every acquisition.
     function test_ceilingSlowsTheBidAboveIt() public {
+        _setSchedule(20 ether); // the schedule cap out of the way: this exercises the vault's own ceiling
         assertEq(sys.vault.bidCeiling(), 7.2 ether, "120% of the 6 ETH clearing price");
         accrueFees(40 ether);
         assertEq(riseBidTo(7.2 ether), 7.2 ether, "the normal meter lands exactly on the ceiling");
@@ -217,6 +221,7 @@ contract BidForkTest is ForkBase {
 
     /// The owner may make the ceiling a hard stop (`slowSweepWei` 0) or remove it (`ceilingBps` 0); bounds hold.
     function test_ceilingIsTheOwners() public {
+        _setSchedule(20 ether); // the schedule cap out of the way: this exercises the vault's own ceiling
         accrueFees(40 ether);
         FundingVault.BidParams memory p = sys.vault.bidParams();
         p.slowSweepWei = 0;
