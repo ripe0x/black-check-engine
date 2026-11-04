@@ -83,11 +83,12 @@ contract ChecksAcquisitionForkTest is ForkBase {
         p.maxSweepWei = 100 ether;
         govern(address(sys.vault), abi.encodeCall(FundingVault.setBidParams, (p)));
         govern(address(sys.vault), abi.encodeCall(FundingVault.setActivationThreshold, (2 ether)));
-        uint256 bid = riseBidTo(1 ether);
-        assertGt(bid, cfg.schedule[0] * 12_000 / 10_000, "the bid itself exceeds the cap");
-        uint256 id = nextCheckId();
         uint256 cap = cfg.schedule[0] * 12_000 / 10_000;
-        vm.expectRevert(FundingVault.OverBudget.selector);
+        riseBidTo(1 ether);
+        assertGt(sys.vault.bidBalance(), cap, "the ETH in the bid exceeds the cap");
+        assertEq(sys.vault.liveBid(), cap, "the bid shown stops at the cap, so taking it is never refused");
+        uint256 id = nextCheckId();
+        vm.expectRevert(abi.encodeWithSelector(FundingVault.AboveBid.selector, cap));
         this.sellAt(id, cap + 1);
         sellCheckAt(id, cap); // at the cap: fine
         assertEq(checks.ownerOf(id), address(sys.poolOwner));

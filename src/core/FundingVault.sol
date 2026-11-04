@@ -321,6 +321,12 @@ contract FundingVault is IFundingVault, ReentrancyGuard, Governed {
         if (bid > budget) bid = budget;
         uint256 cap = _bid.maxPrice;
         if (cap != 0 && bid > cap) bid = cap;
+        // never above what `_book` accepts: 120% of the council's 80-Check price (D012), so a holder who takes the
+        // bid as shown is never refused (found by the rehearsal: the metered bid had climbed past it)
+        if (address(poolOwner) != address(0)) {
+            uint256 schedCap = poolOwner.scheduleOf(0) * MAX_PRICE_OF_SCHEDULE_BPS / BPS;
+            if (bid > schedCap) bid = schedCap;
+        }
     }
 
     /// @notice Above this bid, sweeps forward only `slowSweepWei` per cooldown: `ceilingBps` of the funding reference
