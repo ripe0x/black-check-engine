@@ -2,8 +2,12 @@
 pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IFWAPool, IFWAFactory} from "../../src/interfaces/IFWA.sol";
-import {IChecksOriginals, IChecksEdition} from "../../src/interfaces/IChecks.sol";
+import {LaunchConfig} from "../../script/LaunchConfig.sol";
+import {FwaFeeBuyer, FwaFeeRelay} from "../../src/periphery/FwaFeeRoutes.sol";
+import {Swapper} from "../utils/Swapper.sol";
+import {IChecksOriginals} from "../../src/interfaces/IChecks.sol";
 
 interface IVrfConsumer {
     function rawFulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) external;
@@ -13,32 +17,396 @@ interface IVrfRouted {
     function s_vrfCoordinator() external view returns (address);
 }
 
-/// @dev Ethereum mainnet at a pinned block. Every address and code hash here was read at FORK_BLOCK
-///      (docs/STATUS.md "Pinned environment").
-abstract contract ForkBase is Test {
-    uint256 internal constant FORK_BLOCK = 26_302_000;
-    string internal constant DEFAULT_RPC = "https://mainnet.gateway.tenderly.co";
+/// @dev The Draw Packs instance (lib/shape-packs `ShapePacks`), as tests use it.
+interface IPacksView {
+    function ownerOf(uint256 packId) external view returns (address);
+    function valueOf(uint256 packId) external view returns (uint256);
+    function contentsOf(uint256 packId) external view returns (uint256[] memory);
+    function packOf(uint256 shapeId) external view returns (uint256);
+    function exists(uint256 packId) external view returns (bool);
+    function open(uint256 packId) external;
+    function redeem(uint256 packId) external;
+    function MIN_PACK_VALUE() external view returns (uint256);
+    function transferFrom(address from, address to, uint256 packId) external;
+}
 
-    IChecksOriginals internal constant CHECKS = IChecksOriginals(0x036721e5A769Cc48B3189EFbb9ccE4471E8A48B1);
-    IChecksEdition internal constant EDITIONS = IChecksEdition(0x34eEBEE6942d8Def3c125458D1a86e0A897fd6f9);
-    address internal constant EDITIONS_IMPL = 0x7C74dfe39976dc395529c14e54a597809980e01C;
-    address internal constant SHAPES = 0x6fE9193276bF7aBCbEE44AB7aFd717d637D6FAf0;
-    IFWAFactory internal constant FWA_FACTORY = IFWAFactory(0xF5A3A153164791AB579C3d9ba5DBECf7cDfd300c);
-    address internal constant FWA_IMPL = 0xEaa4d032908A9734a2c7939c0D211c35ad51eb31;
-    address internal constant FWA_VRF_SERVICE = 0xA4adFC35dB18326eFB3b5D9bf66A8103Ec2D5EE2;
-    address internal constant FWA_TOKEN = 0xa0Df17B5aC76ABaBA36E1450E2cbCd18A620C845;
-    address internal constant BLKCHK = 0x718477C471B335ee0ca29B9f4b95Edd26d2eDE54;
+interface IERC721Lite {
+    function ownerOf(uint256 tokenId) external view returns (address);
+    function setApprovalForAll(address operator, bool approved) external;
+    function balanceOf(address owner) external view returns (uint256);
+}
 
-    function setUp() public virtual {
-        vm.createSelectFork(vm.envOr("MAINNET_RPC_URL", DEFAULT_RPC), FORK_BLOCK);
+interface IERC20Lite {
+    function balanceOf(address) external view returns (uint256);
+    function approve(address, uint256) external returns (bool);
+}
+
+/// @notice Mainnet fork base. Forks Ethereum at `FORK_BLOCK` from `MAINNET_RPC_URL` (an archive endpoint, or a local
+///         anvil fork of one) and deploys the whole Checks game with `script/DeploySystem.sol` against the real Checks
+///         Originals and Editions, Shapes, FWA V2 factory, VRF service, FWA token and Uniswap v4 PoolManager.
+/// @dev Provenance: ripe0x/collection-games `test/fork/ForkBase.sol` (409ca75). Changed for Checks: the fork block is
+///      after FWA reopened V2 pool creation (26,335,860, D014), with no FWA switch opened locally; collection NFTs are
+///      real 80-Check Originals bought from their holders.
+abstract contract ForkBase is Test, LaunchConfig {
+    /// @dev After FWA switched V2 pool creation back on (off 26,329,277-26,335,859; D014). Nothing is opened locally.
+    uint256 internal constant FORK_BLOCK = 26_337_000;
+    address internal constant VRF_SERVICE = 0xA4adFC35dB18326eFB3b5D9bf66A8103Ec2D5EE2;
+    /// @dev Opening tick: ~20M coins per ETH (an opening fully diluted value of ~50 ETH).
+    int24 internal constant START_TICK = 173_000; // ~32.6M coins per ETH: ~30.7 ETH opening FDV (D70)
+
+    address internal owner = makeAddr("cg.owner.owner");
+    /// @dev The council Safe (the timelock's proposer) and the guardian. `council` is the deployed timelock itself:
+    ///      `councilCall` acts as an executed council proposal (Governance.t.sol runs the real schedule and delay).
+    address internal councilSafe = makeAddr("checks.council.safe");
+    address internal guardian = makeAddr("checks.guardian");
+    address internal council;
+    address internal keeper = makeAddr("cg.keeper");
+    Config internal cfg;
+    System internal sys;
+    IFWAPool internal pool;
+    Swapper internal swapper;
+    /// @dev Next Checks token id `nextCheckId` examines.
+    uint256 internal nextApe = 1;
+
+    function setUpFork() internal {
+        string memory rpc = vm.envOr("MAINNET_RPC_URL", string("https://mainnet.gateway.tenderly.co"));
+        vm.createSelectFork(rpc, vm.envOr("FORK_BLOCK", FORK_BLOCK));
+        // the same transaction gas price however the suite is run: with `--fork-url` Foundry takes it from the forked
+        // chain, and FWA's randomness fee (and so every quote) depends on it; tests that need a price set their own
+        vm.txGasPrice(0);
     }
 
-    /// @dev Delivers a VRF word the way FWA's service does: the Chainlink coordinator calls the service, which routes
-    ///      to the pool.
+    /// @dev Forks and deploys the Checks game from this test contract (no pool yet).
+    function deployChecks() internal {
+        setUpFork();
+        cfg = _testChecksConfig();
+        _deploy();
+    }
+
+    /// @dev The game with the 80-Check tier (and the bid's reference) at `price`: the vault and bid suites keep
+    ///      collection-games' Ape-scale amounts, which exercise the same mechanics at any price level.
+    function deployChecksAt(uint256 price) internal {
+        setUpFork();
+        cfg = _testChecksConfigAt(price);
+        _deploy();
+    }
+
+    function _testChecksConfigAt(uint256 price) internal view returns (Config memory c) {
+        c = _testChecksConfig();
+        c.schedule[0] = price;
+        c.refPrice = price;
+        c.listing.floorBps = 1_000; // the funding reference's floor at 10% of the price, so walk-downs are visible
+    }
+
+    /// @dev The launch configuration under a test coin identity (the postflight refuses the placeholders, invariant 9).
+    function _testChecksConfig() internal view returns (Config memory c) {
+        c = _checksConfig(owner, councilSafe, guardian);
+        c.name = "Survival Test";
+        c.symbol = "SURVT";
+    }
+
+    /// @dev Calls `target` as the council timelock, as an executed council proposal would.
+    function councilCall(address target, bytes memory data) internal {
+        vm.prank(council);
+        (bool ok, bytes memory ret) = target.call(data);
+        if (!ok) {
+            assembly ("memory-safe") {
+                revert(add(ret, 0x20), mload(ret))
+            }
+        }
+    }
+
+    function _deploy() internal {
+        cfg.create2Deployer = address(this);
+        cfg.create2Direct = true;
+        vm.deal(address(this), 10 ether);
+        sys = _deploySystem(cfg, address(this));
+        council = address(sys.council);
+        postflight(cfg, sys, address(this));
+        swapper = new Swapper(IPoolManager(cfg.poolManager), sys.liquidity.poolKey());
+    }
+
+    // ------------------------------------------------------------------ governance
+
+    /// @dev Calls `target` as the owner (administration takes effect at once).
+    function govern(address target, bytes memory data) internal {
+        vm.prank(owner);
+        (bool ok, bytes memory ret) = target.call(data);
+        if (!ok) {
+            assembly ("memory-safe") {
+                revert(add(ret, 0x20), mload(ret))
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ FWA pool
+
+    /// @dev Delivers the 50,000 FWA creation fee to the pool owner by buying it with ETH, then creates the pool.
+    function createPool() internal {
+        FwaFeeBuyer buyer = new FwaFeeBuyer(IPoolManager(cfg.poolManager), MAINNET_FWA_TOKEN);
+        uint256 fee = IFWAFactory(cfg.fwaFactory).poolCreationFee();
+        uint256 eth = fwaQuoteEth(fee * 10_400 / 10_000);
+        vm.deal(address(this), address(this).balance + eth);
+        buyer.buyTo{value: eth}(address(sys.poolOwner), fee);
+        sys.poolOwner.createPool(keccak256("checks-survival.pool.v1"));
+        pool = sys.poolOwner.pool();
+    }
+
+    /// @dev ETH that buys about `fwaOut` FWA (binary search on a snapshot).
+    function fwaQuoteEth(uint256 fwaOut) internal returns (uint256 eth) {
+        FwaFeeBuyer b = new FwaFeeBuyer(IPoolManager(cfg.poolManager), MAINNET_FWA_TOKEN);
+        address probe = makeAddr("probe");
+        uint256 lo = 0.01 ether;
+        uint256 hi = 200 ether;
+        for (uint256 i; i < 40; ++i) {
+            uint256 mid = (lo + hi) / 2;
+            uint256 snap = vm.snapshotState();
+            vm.deal(address(this), address(this).balance + mid);
+            uint256 out = b.buyTo{value: mid}(probe, 0);
+            vm.revertToState(snap);
+            if (out >= fwaOut) hi = mid;
+            else lo = mid;
+        }
+        eth = hi;
+    }
+
+    // ------------------------------------------------------------------ market
+
+    /// @dev Opens the market, creating the FWA pool first when a test has not (the market opens only after it, D91).
+    function openMarket() internal {
+        if (address(sys.poolOwner.pool()) == address(0)) createPool();
+        vm.prank(owner);
+        sys.liquidity.launch();
+    }
+
+    /// @dev Past the hook's opening curve (69% falling one point a minute to the ordinary fee by minute 64).
+    function pastOpeningCurve() internal {
+        vm.warp(vm.getBlockTimestamp() + 65 minutes);
+        vm.roll(vm.getBlockNumber() + 325);
+    }
+
+    /// @dev Every trading fee paid so far: the vault's part and the $LAYER share waiting in the tap (D90).
+    function feesPaid() internal view returns (uint256) {
+        return sys.vault.tradingFees() + (sys.layerTap == address(0) ? 0 : sys.layerTap.balance);
+    }
+
+    function buyCoin(address who, uint256 eth) internal returns (uint256 out) {
+        vm.deal(who, who.balance + eth);
+        vm.prank(who);
+        (, out) = swapper.buy{value: eth}(eth, false);
+    }
+
+    function sellCoin(address who, uint256 amount) internal returns (uint256 ethOut) {
+        vm.startPrank(who);
+        sys.token.approve(address(swapper), amount);
+        (, ethOut) = swapper.sell(amount, false);
+        vm.stopPrank();
+    }
+
+    // ------------------------------------------------------------------ collection
+
+    /// @dev An ordinary Checks holder sells token `id` to the protocol for the whole live bid.
+    function sellCheck(uint256 id) internal returns (uint256 price) {
+        price = sellCheckAt(id, sys.vault.liveBid());
+    }
+
+    /// @dev An ordinary Checks holder sells token `id` to the protocol for `price` (at most the live bid).
+    function sellCheckAt(uint256 id, uint256 price) internal returns (uint256) {
+        address holder = IERC721Lite(cfg.collection).ownerOf(id);
+        vm.startPrank(holder);
+        IERC721Lite(cfg.collection).setApprovalForAll(address(sys.vault), true);
+        sys.vault.sellToProtocol(id, price);
+        vm.stopPrank();
+        return price;
+    }
+
+    /// @dev Sweeps the live bid (as keepers, waiting sellers or players' draws would), waiting out each cooldown
+    ///      (12 s blocks), until it reaches `target` or nothing more can enter it.
+    function riseBidTo(uint256 target) internal returns (uint256 bid) {
+        for (uint256 i; i < 10_000; ++i) {
+            bid = sys.vault.liveBid();
+            if (bid >= target) return bid;
+            try sys.vault.sweep() {}
+            catch {
+                uint256 next = sys.vault.nextSweepBlock();
+                if (vm.getBlockNumber() >= next) return bid; // nothing left to forward
+                vm.warp(vm.getBlockTimestamp() + (next - vm.getBlockNumber()) * 12);
+                vm.roll(next);
+            }
+        }
+    }
+
+    /// @dev Finds the next live 80-Check Original held by an ordinary account (not a contract, not the protocol),
+    ///      from `nextApe`. Burned ids (composites' inputs) are skipped.
+    function nextCheckId() internal returns (uint256 id) {
+        IChecksOriginals checks = IChecksOriginals(cfg.collection);
+        while (true) {
+            id = nextApe++;
+            require(id < 20_000, "nextCheckId: none left");
+            try checks.ownerOf(id) returns (address o) {
+                if (o == address(sys.poolOwner) || o.code.length != 0 || o == address(0)) continue;
+                if (checks.getCheck(id).stored.divisorIndex == 0) return id;
+            } catch {}
+        }
+    }
+
+    // ------------------------------------------------------------------ launch lifecycle
+
+    /// @dev Contributes ETH to the vault as if trading fees had accrued (`receive` from the PoolManager).
+    function accrueFees(uint256 eth) internal {
+        vm.deal(cfg.poolManager, cfg.poolManager.balance + eth);
+        vm.prank(cfg.poolManager);
+        (bool ok,) = address(sys.vault).call{value: eth}("");
+        require(ok, "fee accrual");
+    }
+
+    /// @dev What keepers can earn listing the opening board: the opening allowance is a limit, not a deposit (D79),
+    ///      and listing the board costs about 0.05-0.14 ETH, so fees fund at most 0.1 ETH of it.
+    function listingPayRoom() internal view returns (uint256) {
+        return cfg.openingAllowance < 0.1 ether ? cfg.openingAllowance : 0.1 ether;
+    }
+
+    /// @dev Full launch: pool, market, first Ape at `apePrice`, the board, the reserve, activation.
+    function launchGame(uint256 apePrice) internal {
+        createPool();
+        openMarket();
+        // fees for the Ape and the sweep rewards on the way
+        accrueFees(apePrice + 0.05 ether);
+        // the live bid fills to its threshold at once, then is metered up by sweeps
+        assertGe(riseBidTo(apePrice), apePrice, "bid metered up to the price");
+        sellCheckAt(nextCheckId(), apePrice);
+        // the board and reserve, plus room for the keeper pay of listing it
+        uint256 need = sys.game.capitalNeed() + listingPayRoom();
+        accrueFees(need);
+        syncAll();
+        _logReady();
+        sys.game.activate();
+        assertTrue(sys.game.activated(), "activated");
+    }
+
+    function _logReady() internal {
+        emit log_named_uint("liveRows popcount (liveCount)", sys.game.liveCount());
+        emit log_named_uint("boardSize", sys.game.boardSize());
+        emit log_named_uint("unsettled", pool.unsettledAcquisitionCount());
+        emit log_named_uint("activeListingCount", pool.activeListingCount());
+        emit log_named_uint("collectionAvailable", sys.poolOwner.collectionAvailable() ? 1 : 0);
+        emit log_named_uint("cash", sys.game.cash());
+        emit log_named_uint("admissible", sys.game.admissible() ? 1 : 0);
+        emit log_named_uint("custody", sys.poolOwner.custodyCount());
+        emit log_named_uint("vault general", sys.vault.generalBalance());
+        emit log_named_uint("capitalNeed", sys.game.capitalNeed());
+    }
+
+    /// @dev The game's books reconcile to its ETH: cash + proceeds still in FWA equals capital in + booked revenue −
+    ///      prizes carried − prize expense − keeper pay − distributions − returns, up to the 1 wei per capture FWA's split
+    ///      rounds in the owner's favour.
+    function assertBooks() internal view {
+        uint256 actual = sys.game.cash() + (address(pool) == address(0) ? 0 : pool.ownerProceeds());
+        uint256 credits = sys.game.capitalIn() + sys.game.revenue();
+        uint256 debits = sys.game.inventoryCost() + sys.game.prizeExpense() + sys.game.keeperPaid() + sys.game.distributed()
+            + sys.game.returnedToVault();
+        assertGe(actual + debits, credits, "books: cash below ledger");
+        // FWA credits owner proceeds at delivery; the game books them at its next sync. Exact once caught up.
+        bool caughtUp = address(pool) == address(0)
+            || (sys.game.seenSeq() > pool.lastIssuedSequence() && sys.game.openCount() == 0);
+        if (caughtUp) {
+            assertLe(actual + debits - credits, sys.game.pullsFulfilled() + 1, "books: unexplained cash");
+        }
+        (, uint256 d) = sys.game.distributable();
+        int256 undistributed = sys.game.profit() - int256(sys.game.distributed());
+        if (undistributed <= 0) assertEq(d, 0, "nothing distributable while a loss is carried");
+    }
+
+    // ------------------------------------------------------------------ pulls
+
+    function pull(address purchaser) internal returns (uint256 requestId) {
+        (uint256 fee,, uint256 total) = pool.quoteAcquisitionPrice(1);
+        uint256 version = pool.inventoryVersion();
+        vm.deal(purchaser, purchaser.balance + total);
+        vm.prank(purchaser);
+        requestId = pool.acquire{value: total}(purchaser, fee, 0, 10_000, version, vm.getBlockTimestamp() + 1 hours);
+    }
+
     function deliverWord(uint256 requestId, uint256 word) internal {
         uint256[] memory words = new uint256[](1);
         words[0] = word;
-        vm.prank(IVrfRouted(FWA_VRF_SERVICE).s_vrfCoordinator());
-        IVrfConsumer(FWA_VRF_SERVICE).rawFulfillRandomWords(requestId, words);
+        vm.prank(IVrfRouted(VRF_SERVICE).s_vrfCoordinator());
+        IVrfConsumer(VRF_SERVICE).rawFulfillRandomWords(requestId, words);
     }
+
+    function pullAndSettle(address purchaser, uint256 word) internal returns (uint256 requestId) {
+        requestId = pull(purchaser);
+        vm.roll(vm.getBlockNumber() + 3);
+        deliverWord(requestId, word);
+        pool.processAcquisitions(10);
+    }
+
+    /// @dev A word that makes the head request capture the first Active listing matching `pick`: a Shape of backing
+    ///      `wantBacking`, or (wantBacking == type(uint256).max) a collection listing. FWA picks `word % totalWeight`
+    ///      along slot order.
+    function wordFor(uint256 wantBacking) internal view returns (uint256 prefix) {
+        for (uint256 slot = 1; slot < 2000; ++slot) {
+            uint256 id = pool.slotToListing(slot);
+            if (id == 0) continue;
+            (address c,,,, uint256 weight,,, IFWAPool.ListingStatus st) = pool.listings(id);
+            if (st != IFWAPool.ListingStatus.Active) continue;
+            if (wantBacking == type(uint256).max) {
+                if (c == cfg.collection) return prefix;
+            } else if (c == cfg.shapes || c == sys.packs) {
+                (, uint72 backing,,,,,) = sys.game.items(id);
+                if (backing == wantBacking || wantBacking == 0) return prefix;
+            }
+            prefix += weight;
+        }
+        revert("wordFor: none");
+    }
+
+    function window() internal {
+        (, uint256 interval,,,,,,) = sys.game.settings();
+        vm.warp(vm.getBlockTimestamp() + interval);
+    }
+
+    function syncAll() internal {
+        for (uint256 i; i < 30; ++i) {
+            vm.prank(keeper);
+            try sys.game.sync() {} catch { return; }
+        }
+    }
+
+    /// @dev True when FWA would accept a purchase now: purchases enabled and our purchase gate admits it.
+    function canPull(address who) internal view returns (bool) {
+        return pool.localPurchasesEnabled() && sys.poolOwner.canPurchase(who);
+    }
+
+    function playMany(address who, uint256 n, uint256 seed) internal {
+        for (uint256 i; i < n; ++i) {
+            if (!canPull(who)) {
+                window();
+                syncAll();
+                if (!canPull(who)) break;
+            }
+            pullAndSettle(who, uint256(keccak256(abi.encode(seed, i))));
+            if (i % 10 == 9) {
+                window();
+                syncAll();
+            }
+        }
+        restockAll();
+    }
+
+    /// @dev Keeper maintenance across maintenance windows until every row in play is listed again: a call lists at most
+    ///      the board's `maxPerCall` and a remainder below `listBatch` waits for the next window (D61).
+    function restockAll() internal {
+        for (uint256 i; i < 20; ++i) {
+            window();
+            syncAll();
+            if (sys.game.liveCount() == sys.game.boardSize()) return;
+        }
+    }
+
+    function statusOf(uint256 requestId) internal view returns (IFWAPool.AcquisitionStatus st) {
+        (,,,, st) = pool.acquisitions(requestId);
+    }
+
+    receive() external payable {}
 }

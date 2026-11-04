@@ -1,80 +1,76 @@
-// Pure decision logic for the keeper. No network: every function here takes already-read state and returns what the
-// keeper would do. index.mjs reads the chain, calls these, simulates each chosen action with eth_call and only then
-// sends. The engine makes all of these permissionless, so the keeper never does anything a stranger could not.
+// When a keeper acts. Two modes:
+// - primary: act whenever a job has work (its simulation succeeds) and the basefee is at most MAX_GAS_PRICE_GWEI
+//   (the game reimburses the gas at the transaction's gas price up to its `maxGasPrice`, 3 gwei at launch, plus a flat
+//   fee, within the allowance captures earn; above the cap it still reimburses, at the cap);
+// - backup: act only when the job's work has waited longer than BACKUP_AFTER_SECONDS (measured by this keeper from
+//   when it first saw the work), or the basefee is below BACKUP_BASEFEE_GATE_GWEI. Other keepers are welcome to do
+//   the work first.
+// Neither mode ever acts above GAS_PRICE_LIMIT_GWEI (10), however old the work: the game reimburses at most its
+// `maxGasPrice`, so above that every call is paid for by the keeper (final audit round 2: a backup at 100 gwei spent
+// about 0.57 ETH on a sync that paid 0.02 ETH). The limit also caps the transaction's maxFeePerGas.
+// Settlement is not a keeper job (D53): FWA settles requests itself (the randomness callback), and anyone may settle
+// the rest (FWA `processAcquisitions`, which the site's DrawRouter calls before each draw; `sync` also tries it).
+// Players' draws through the DrawRouter also run the game's `upkeep` (`sync` unpaid, D77), so keepers are a backstop:
+// within five minutes of a draw's upkeep the game does light work in a paid sync but pays nothing for it (D82), so this
+// keeper leaves it to the next draw unless `UNPAID=1`.
+// Keepers do what only the protocol may do: book results, replace prizes (owner-only on FWA), list the next Ape,
+// pay surplus, and run buybacks. `sweep` meters the vault's ETH into its live bid (rewarded by the vault; sellers and
+// the DrawRouter do it too). After the game has retired (a migration, or the sunset) anyone hands its Apes and capital
+// to the successor; the sunset's ETH goes to the burner, and the burner's milestone reserve is released.
 
-const BPS = 10_000n;
-
-// Engine._notional: the schedule, decaying linearly to the floor. Mirrors src/core/Engine.sol exactly.
-export function notional({tierNotional, survived, decayBpsPerDraw, floorBps}) {
-  const drop = survived * decayBpsPerDraw;
-  const share = drop >= BPS - floorBps ? floorBps : BPS - drop;
-  return (tierNotional * share) / BPS;
+/** @returns {boolean} */
+export function shouldAct({ mode, ageSeconds, basefeeWei, maxBasefeeWei, backupAfterSeconds, gateWei, limitWei }) {
+  if (basefeeWei > limitWei) return false;
+  if (mode === "primary") return basefeeWei <= maxBasefeeWei || ageSeconds > backupAfterSeconds;
+  return ageSeconds > backupAfterSeconds || basefeeWei < gateWei;
 }
 
-// The target price if a reprice would move this listing enough to be worth it, else null. Mirrors Engine.reprice:
-// skip when unchanged, zero, or below the step unless the target is exactly the floor or the schedule (a boundary).
-export function repriceTarget({tierNotional, survived, oldPrice, decayBpsPerDraw, floorBps, repriceStepBps}) {
-  const target = notional({tierNotional, survived, decayBpsPerDraw, floorBps});
-  if (target === oldPrice || target === 0n) return null;
-  const diff = target > oldPrice ? target - oldPrice : oldPrice - target;
-  const boundary = target === (tierNotional * floorBps) / BPS || target === tierNotional;
-  if (!boundary && diff * BPS < oldPrice * repriceStepBps) return null;
-  return target;
-}
-
-// Engine._first: the deterministic survivor is the one with more survived draws, lower id breaking a tie.
-export function first(a, b) {
-  if (a.survived !== b.survived) return a.survived > b.survived ? a : b;
-  return a.id < b.id ? a : b;
-}
-
-// Free, deterministic compose pairs from the ready checks. A check is "ready" when it is eligible and has survived
-// grace draws past its tier threshold (readyAt(id, graceDraws)), which is what makes the compose free (no coin). We
-// pair same-tier ready checks; keep = first(pair) and swap=false, so the outcome is exactly the deterministic one the
-// contract gives away for free. Tiers 0..5 only (6 is a single -> Black via formBlack).
-export function composePairs(ready) {
-  const byTier = new Map();
-  for (const c of ready) {
-    if (c.tier > 5) continue;
-    if (!byTier.has(c.tier)) byTier.set(c.tier, []);
-    byTier.get(c.tier).push(c);
+/**
+ * The free deterministic composition the keeper may run now (D008: once nobody has chosen within the grace, the
+ * deterministic outcome is free and anyone may run it), or null. One per tick. `listings`: [{ listingId, tokenId,
+ * tier, draws }] of open Check listings; `drawsToCompose` per tier below Black; `grace` in draws.
+ * - two Checks of a tier at most 5 (80 to 4), both past threshold + grace: keep the one with more survived draws (the
+ *   lower token id on a tie), as the desk's free rule requires;
+ * - 64 singles all past threshold + grace: the 64 lowest token ids, ascending (the first survives as the Black Check).
+ */
+export function freeComposition(listings, drawsToCompose, grace) {
+  const ready = (l) => l.tier < 7 && l.draws > 0n && l.draws >= BigInt(drawsToCompose[l.tier]) + BigInt(grace);
+  const singles = listings.filter((l) => l.tier === 6 && ready(l)).sort((a, b) => (a.tokenId < b.tokenId ? -1 : 1));
+  if (singles.length >= 64) return { name: "formBlack", args: [singles.slice(0, 64).map((l) => l.listingId)] };
+  for (let tier = 0; tier <= 5; ++tier) {
+    const c = listings
+      .filter((l) => l.tier === tier && ready(l))
+      .sort((a, b) => (a.draws !== b.draws ? (a.draws > b.draws ? -1 : 1) : a.tokenId < b.tokenId ? -1 : 1));
+    if (c.length >= 2) return { name: "compose", args: [c[0].listingId, c[1].listingId, false] };
   }
-  const pairs = [];
-  for (const group of byTier.values()) {
-    const q = [...group];
-    while (q.length >= 2) {
-      const a = q.pop();
-      const b = q.pop();
-      const keep = first(a, b);
-      const burn = keep === a ? b : a;
-      pairs.push([keep.id, burn.id]);
-    }
-  }
-  return pairs;
+  return null;
 }
 
-// 64 ready singles (tier 6), ids strictly ascending, so formBlack is free (the lowest id survives). null if fewer.
-export function blackBatch(ready) {
-  const singles = ready.filter((c) => c.tier === 6).map((c) => c.id);
-  if (singles.length < 64) return null;
-  return singles.sort((x, y) => (x < y ? -1 : 1)).slice(0, 64);
-}
-
-// The jobs to try this tick, in order. `s` is the classified on-chain state (index.mjs). Settling the FWA queue comes
-// first because the other maintenance needs an empty queue; then listing, restock, reprice, compositions, proceeds.
-// Every job is still simulated before it is sent, so an entry here only means "there may be work".
+/**
+ * The jobs to try this tick, in order. `state` is read on chain; every job is still simulated before sending.
+ * @param {object} s
+ */
 export function jobs(s) {
   const out = [];
-  if (s.processAcq) out.push({name: "processAcquisitions"});
-  if (s.listChecks.length) out.push({name: "listChecks", ids: s.listChecks});
-  if (s.listShapes.length) out.push({name: "listShapes", ids: s.listShapes});
-  if (s.restock.length) out.push({name: "restockShapes", ids: s.restock});
-  if (s.reprice.length) out.push({name: "reprice", ids: s.reprice});
-  for (const [keep, burn] of s.composePairs) out.push({name: "compose", pair: [keep, burn]});
-  if (s.blackBatch) out.push({name: "formBlack", ids: s.blackBatch});
-  if (s.collectController) out.push({name: "collect", address: s.collectController});
-  if (s.hook) out.push({name: "forward"});
-  if (s.releaseSurplus) out.push({name: "releaseSurplus"}); // engine.burner() is set
-  if (s.burner) out.push({name: "burn"}); // BURNER contract configured
+  if (s.retired) {
+    out.push({ name: "retireStep" }); // sweeps late settlements
+    out.push({ name: "migrateApes" });
+    out.push({ name: "migrateCapital" });
+    if (s.sunsetDue) out.push({ name: "flushSunset" }); // its ETH to the burner; starts the auction clock
+    if (s.reserve > 0n) out.push({ name: "releaseRetired" });
+    if (s.burnerReady) out.push({ name: "buyback" });
+    return out;
+  }
+  if (s.retiring) {
+    out.push({ name: "processAcquisitions" }); // retirement waits for every request to settle
+    out.push({ name: "retireStep" });
+    return out;
+  }
+  if (s.poolExists) out.push({ name: "sync" });
+  if (!s.activated && s.ready) out.push({ name: "activate" });
+  for (const id of s.unreleasedWins) out.push({ name: "release", args: [id] });
+  if (s.composition) out.push(s.composition); // the free deterministic outcome only (D008)
+  if (s.burnerReady) out.push({ name: "buyback" });
+  if (s.sweepReady) out.push({ name: "sweep" });
   return out;
 }

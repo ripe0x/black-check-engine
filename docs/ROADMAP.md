@@ -26,5 +26,10 @@ Exit: Tested implementation with current technical documentation and independent
 Reconcile contracts and dependencies, prepare audit package and mainnet rehearsal scripts, document residual risks, and prepare a concise grouped founder review. Seek independent legal review for paid chance-based game.
 Exit: Audit-ready candidate. Do not deploy, spend funds, mint live token, or launch without explicit approval.
 
+## Rebase on collection-games (R0-R9)
+The owner directed that ripe0x/collection-games become the base (2026-11-03). Phases R0-R9 in docs/REBASE_PLAN.md
+re-run the Phase 1-5 acceptance criteria on that base, keeping only the Checks-specific parts of this repository.
+Exit: an `rc3` candidate meeting Phase 5's exit, with the old architecture archived at the `rc2` tag.
+
 ## Phase review
 At each boundary ask: What outcome was proved? Which design assumption failed? Is the simpler solution to revise or drop a mechanic? What tests would falsify it? What decisions need founder review? Update spec, status, roadmap, and decisions together.

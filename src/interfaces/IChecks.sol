@@ -2,7 +2,7 @@
 pragma solidity 0.8.28;
 
 /// @notice The subset of Checks Originals (mainnet 0x036721e5A769Cc48B3189EFbb9ccE4471E8A48B1) this protocol uses.
-///         Struct layouts are copied from the verified source in `external/checks-originals/contracts/interfaces/IChecks.sol`.
+///         Provenance: this repository at tag rc2. Struct layouts are copied from the verified source in `external/checks-originals/contracts/interfaces/IChecks.sol`.
 ///         `divisorIndex` is the tier: 0 = 80 checks, 1 = 40, 2 = 20, 3 = 10, 4 = 5, 5 = 4, 6 = 1, 7 = Black.
 interface IChecksOriginals {
     struct StoredCheck {

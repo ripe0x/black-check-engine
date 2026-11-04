@@ -2,9 +2,9 @@
 pragma solidity 0.8.28;
 
 /// @notice The subset of the FWA V2 standard pool (`FWAClone`, mainnet implementation
-///         0xeaa4d032908a9734a2c7939c0d211c35ad51eb31) this protocol uses. Enum orders and the tuple order of the public
-///         struct getters match the verified source in `external/fwa-v2/mainnet/FWAClone`.
-///         Provenance: ripe0x/collection-games `src/interfaces/IFWA.sol` (MIT).
+///         0xeaa4d032908a9734a2c7939c0d211c35ad51eb31) that Collection Games uses.
+///         Provenance: ripe0x/draw-shapes PR #9 `src/interfaces/IFWA.sol` (MIT), extended with the purchase operator. Enum orders and the tuple
+///         order of the public struct getters match `external/fwa-v2/mainnet/FWAClone`.
 interface IFWAPool {
     struct ListingInput {
         address collection;
@@ -36,9 +36,7 @@ interface IFWAPool {
     }
 
     function listNFTs(ListingInput[] calldata items) external returns (uint256[] memory listingIds);
-    function withdrawListingTo(uint256 listingId, address recipient) external;
     function withdrawListingsTo(uint256[] calldata listingIds, address recipient) external;
-    function activateListings(uint256 maxCount) external;
     function updatePrice(uint256 listingId, uint256 newPrice) external;
     function recoverRefundedNFT(uint256 listingId) external;
     function setBool(uint256 key, bool value) external;
@@ -81,6 +79,7 @@ interface IFWAPool {
     function inventoryVersion() external view returns (uint256);
     function purchasesResumeAt() external view returns (uint256);
     function unsettledAcquisitionCount() external view returns (uint256);
+    function nextListingId() external view returns (uint256);
     function lastIssuedSequence() external view returns (uint64);
     function nextSequenceToProcess() external view returns (uint64);
     function requestIdAtSequence(uint64 sequence) external view returns (uint256);
@@ -130,7 +129,7 @@ interface IFWAPool {
     function pendingDeliveries(uint256 listingId) external view returns (uint256 requestId, uint64 deadline);
 }
 
-/// @notice The subset of the FWA V2 factory (mainnet 0xf5a3a153164791ab579c3d9ba5dbecf7cdfd300c) this protocol uses.
+/// @notice The subset of the FWA V2 factory (mainnet 0xf5a3a153164791ab579c3d9ba5dbecf7cdfd300c) Collection Games uses.
 interface IFWAFactory {
     function createPool(bytes32 userSalt, uint256 expectedCreationFee, address expectedImplementation)
         external
@@ -143,19 +142,7 @@ interface IFWAFactory {
     function globalPurchasesEnabled() external view returns (bool);
     function inventoryChangeCooldown() external view returns (uint256);
     function owner() external view returns (address);
-    function poolCreationEnabled() external view returns (bool);
-    function betaAccess() external view returns (bool);
-    function maxPoolsPerWallet() external view returns (uint256);
-    function vrfRequestsPaused() external view returns (bool);
-    function maxAcquisitionsPerTx() external view returns (uint256);
-    function selectionTimeoutBlocks() external view returns (uint256);
-    function maxOutstandingRequestsPerPool() external view returns (uint256);
-    function poolImplementation(address pool) external view returns (address);
-    function predictPoolAddress(address poolOwner, bytes32 userSalt) external view returns (address);
     function setGlobalWithdrawOnly(bool enabled) external;
-    function setGlobalPurchasesEnabled(bool enabled) external;
-    function setEdgeBps(uint16 newEdgeBps) external;
-    function setInventoryChangeCooldown(uint32 newCooldown) external;
 }
 
 /// @dev `FWAConfigKeys.ACQUISITIONS_ENABLED`, the only key the pool's `setBool` accepts.
@@ -165,4 +152,9 @@ uint256 constant FWA_ACQUISITIONS_ENABLED = 41;
 ///         an operator is set. A revert or malformed answer fails the purchase closed.
 interface IPurchaseOperator {
     function canPurchase(address wallet) external view returns (bool allowed);
+}
+
+/// @notice The FWA token: burnable (the pool owner burns creation-fee leftovers).
+interface IFWABurnable {
+    function burn(uint256 amount) external;
 }

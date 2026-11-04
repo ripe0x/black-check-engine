@@ -1,65 +1,77 @@
-import {test} from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
-import {notional, repriceTarget, first, composePairs, blackBatch, jobs} from "../src/policy.mjs";
+import { shouldAct, jobs, freeComposition } from "../src/policy.mjs";
 
-// launch-ish params: decay 20 bps/draw, floor 85%, step 5%
-const dp = {decayBpsPerDraw: 20n, floorBps: 8500n, repriceStepBps: 500n};
-const E = 10n ** 18n;
+const g = 1_000_000_000n;
+const base = { maxBasefeeWei: 30n * g, backupAfterSeconds: 21_600n, gateWei: g, limitWei: 200n * g };
 
-test("notional decays linearly to the floor", () => {
-  assert.equal(notional({tierNotional: E, survived: 0n, ...dp}), E); // schedule
-  assert.equal(notional({tierNotional: E, survived: 10n, ...dp}), (E * 9800n) / 10000n); // 10 draws -> -2%
-  assert.equal(notional({tierNotional: E, survived: 1000n, ...dp}), (E * 8500n) / 10000n); // clamped at the floor
+test("primary acts at or below its basefee ceiling, or when work is very old", () => {
+  assert.equal(shouldAct({ ...base, mode: "primary", ageSeconds: 1n, basefeeWei: 30n * g }), true);
+  assert.equal(shouldAct({ ...base, mode: "primary", ageSeconds: 1n, basefeeWei: 31n * g }), false);
+  assert.equal(shouldAct({ ...base, mode: "primary", ageSeconds: 21_601n, basefeeWei: 100n * g }), true);
 });
 
-test("repriceTarget: null until the move clears the step, non-null at a boundary even if small", () => {
-  // from the schedule, one survived draw moves 0.2% < 5% step -> wait
-  assert.equal(repriceTarget({tierNotional: E, survived: 1n, oldPrice: E, ...dp}), null);
-  // 30 draws -> -6% from schedule, clears the 5% step
-  assert.equal(repriceTarget({tierNotional: E, survived: 30n, oldPrice: E, ...dp}), (E * 9400n) / 10000n);
-  // already at the target -> null
-  assert.equal(repriceTarget({tierNotional: E, survived: 30n, oldPrice: (E * 9400n) / 10000n, ...dp}), null);
-  // reaching the floor is a boundary: taken even though the last step from 85.2% is under 5%
-  const nearFloor = notional({tierNotional: E, survived: 74n, ...dp}); // 85.2%
-  assert.equal(repriceTarget({tierNotional: E, survived: 75n, oldPrice: nearFloor, ...dp}), (E * 8500n) / 10000n);
+test("neither mode acts above the gas price limit, however old the work", () => {
+  const capped = { ...base, limitWei: 10n * g };
+  assert.equal(shouldAct({ ...capped, mode: "primary", ageSeconds: 1_000_000n, basefeeWei: 100n * g }), false);
+  assert.equal(shouldAct({ ...capped, mode: "backup", ageSeconds: 1_000_000n, basefeeWei: 100n * g }), false);
+  assert.equal(shouldAct({ ...capped, mode: "backup", ageSeconds: 1_000_000n, basefeeWei: 10n * g }), true);
 });
 
-test("first: more survived draws wins, lower id breaks a tie (Engine._first)", () => {
-  assert.deepEqual(first({id: 2n, survived: 5n}, {id: 1n, survived: 3n}), {id: 2n, survived: 5n});
-  assert.deepEqual(first({id: 7n, survived: 4n}, {id: 3n, survived: 4n}), {id: 3n, survived: 4n});
+test("backup waits six hours unless gas is cheap", () => {
+  assert.equal(shouldAct({ ...base, mode: "backup", ageSeconds: 100n, basefeeWei: 5n * g }), false);
+  assert.equal(shouldAct({ ...base, mode: "backup", ageSeconds: 21_601n, basefeeWei: 5n * g }), true);
+  assert.equal(shouldAct({ ...base, mode: "backup", ageSeconds: 100n, basefeeWei: g - 1n }), true);
 });
 
-test("composePairs: same tier only, keep = first, no coin pairs", () => {
-  const ready = [
-    {id: 10n, tier: 0, survived: 5n}, {id: 11n, tier: 0, survived: 9n},
-    {id: 20n, tier: 2, survived: 1n}, // unpaired, stays
-    {id: 7n, tier: 6, survived: 9n}, // a single, not composed here
-  ];
-  const pairs = composePairs(ready);
-  assert.equal(pairs.length, 1);
-  assert.deepEqual(pairs[0], [11n, 10n]); // 11 survived more -> survivor
+const idle = { activated: true, retiring: false, retired: false, ready: false, poolExists: true, unreleasedWins: [],
+  burnerReady: false, reserve: 0n };
+
+test("ordinary operation: sync (no FWA processing: players and the callback settle), then releases and buybacks when due", () => {
+  assert.deepEqual(jobs(idle).map((j) => j.name), ["sync"]);
+  const busy = { ...idle, unreleasedWins: [7n], burnerReady: true };
+  assert.deepEqual(jobs(busy).map((j) => j.name), ["sync", "release", "buyback"]);
+  assert.deepEqual(jobs(busy)[1].args, [7n]);
 });
 
-test("blackBatch: 64 ascending singles or null", () => {
-  assert.equal(blackBatch([{id: 1n, tier: 6, survived: 9n}]), null);
-  const singles = Array.from({length: 70}, (_, i) => ({id: BigInt(100 - i), tier: 6, survived: 9n}));
-  const batch = blackBatch(singles);
-  assert.equal(batch.length, 64);
-  for (let i = 1; i < 64; i++) assert.ok(batch[i - 1] < batch[i]); // strictly ascending -> free
+test("the live bid is swept when a sweep can forward", () => {
+  assert.deepEqual(jobs({ ...idle, sweepReady: true }).map((j) => j.name), ["sync", "sweep"]);
 });
 
-const empty = {processAcq: null, listChecks: [], listShapes: [], restock: [], reprice: [], composePairs: [],
-  blackBatch: null, collectController: null, hook: null, releaseSurplus: false, burner: null};
-
-test("jobs: nothing to do yields no jobs", () => {
-  assert.deepEqual(jobs(empty), []);
+test("funding mode: activation once ready; no pool means nothing to sync", () => {
+  assert.deepEqual(jobs({ ...idle, activated: false, ready: true }).map((j) => j.name), ["sync", "activate"]);
+  assert.deepEqual(jobs({ ...idle, activated: false, poolExists: false }), []);
 });
 
-test("jobs: queue settles first, then listing, restock, reprice, composes, proceeds", () => {
-  const s = {...empty, processAcq: {}, listChecks: [1n], listShapes: [2n], restock: [3n], reprice: [4n],
-    composePairs: [[5n, 6n]], blackBatch: null, collectController: "0xc", hook: "0xh", releaseSurplus: true, burner: "0xb"};
-  assert.deepEqual(jobs(s).map((j) => j.name), [
-    "processAcquisitions", "listChecks", "listShapes", "restockShapes", "reprice", "compose",
-    "collect", "forward", "releaseSurplus", "burn",
-  ]);
+test("retirement: settle and step; after it, hand over to the successor, flush the sunset, release the reserve", () => {
+  assert.deepEqual(jobs({ ...idle, retiring: true }).map((j) => j.name), ["processAcquisitions", "retireStep"]);
+  assert.deepEqual(jobs({ ...idle, retired: true }).map((j) => j.name), ["retireStep", "migrateApes", "migrateCapital"]);
+  assert.deepEqual(jobs({ ...idle, retired: true, sunsetDue: true, reserve: 1n, burnerReady: true }).map((j) => j.name),
+    ["retireStep", "migrateApes", "migrateCapital", "flushSunset", "releaseRetired", "buyback"]);
+});
+
+test("free composition: the deterministic outcome only, past threshold + grace", () => {
+  const thr = [100, 100, 100, 100, 100, 100, 200];
+  const l = (listingId, tokenId, tier, draws) => ({ listingId, tokenId, tier, draws });
+  // within the grace: nothing
+  assert.equal(freeComposition([l(1n, 10n, 0, 120n), l(2n, 11n, 0, 149n)], thr, 50), null);
+  // both past it: keep the one with more draws
+  assert.deepEqual(freeComposition([l(1n, 10n, 0, 150n), l(2n, 11n, 0, 160n)], thr, 50),
+    { name: "compose", args: [2n, 1n, false] });
+  // a tie keeps the lower token id
+  assert.deepEqual(freeComposition([l(1n, 12n, 1, 150n), l(2n, 11n, 1, 150n)], thr, 50),
+    { name: "compose", args: [2n, 1n, false] });
+  // singles never pair; Black takes 64, the lowest ids ascending
+  assert.equal(freeComposition([l(1n, 10n, 6, 999n), l(2n, 11n, 6, 999n)], thr, 50), null);
+  const singles = Array.from({ length: 70 }, (_, i) => l(BigInt(1000 + i), BigInt(500 - i), 6, 300n));
+  const r = freeComposition(singles, thr, 50);
+  assert.equal(r.name, "formBlack");
+  assert.equal(r.args[0].length, 64);
+  assert.equal(r.args[0][0], 1069n, "the lowest token id first");
+});
+
+test("composition is offered after releases, never while retiring", () => {
+  const c = { name: "compose", args: [1n, 2n, false] };
+  assert.deepEqual(jobs({ ...idle, composition: c }).map((j) => j.name), ["sync", "compose"]);
+  assert.deepEqual(jobs({ ...idle, retiring: true, composition: c }).map((j) => j.name), ["processAcquisitions", "retireStep"]);
 });

@@ -1,75 +1,70 @@
-# Founder review (grouped)
+# Founder review (grouped): the rebased system
 
-Branch `dev`, local only. Nothing deployed, broadcast, spent, published or pushed.
+Branch `claude/wizardly-shannon-440owk`, tracking PR ripe0x/black-check-engine#1. Nothing deployed, broadcast, spent or
+published. The pre-rebase review is in git history (tag `rc2`).
 
-## Decisions (answered 2026-10-30)
-
-The founder accepted the recommendations for decisions 1-6 and kept the placeholder venue fee and opening price for
-the release candidate.
+## Decisions
 
 | # | Decision | Outcome |
 | --- | --- | --- |
-| 1 | D003 Pricing source | Timelocked tier schedule; guardian halts on sharp market moves |
-| 2 | D005 Decay depth | Floor 85% of schedule, 0.2% per survived draw |
-| 3 | D006 Coin buyouts | Launch disabled; enabled per tier through the timelock once the coin trades with depth |
-| 4 | D007 Acquisitions | Standing bid at 90% of schedule, weekly cap |
-| 5 | D009 Coin venue | Design accepted; fee 1% and opening tick 161,200 remain placeholders; no opening curve |
-| 6 | D001 Black Check framing | A single Check is the realistic headline; a Black Check stays possible, never promised |
-
-Optional reviews still open: D002 (survival counts allocating draws), D004 (Shapes at backing + 10%), D008
-(composition window in draws), D010 (buy-and-burn chunk and reserve).
+| D012 | Authority over migration, fee routing and value | Council timelock (Safe proposes, 7 days, guardian cancels); the owner keeps pause, bounded settings and the instant sunset into buybacks. Approved |
+| D013 / D016 | Coin market | Collection-games' mechanics with modelled values: tick 173,000 (about 30.7 ETH), 5% each way after the fixed 69% curve, buybacks held until a Check is won, no $LAYER share. Approved by delegation |
+| D014 | FWA venue | V2 (creation reopened at block 26,335,860); community pools as the tested migration target. Approved |
+| D015 | Remaining choices | Seaport adapter kept; Sunset adopted; keeper pay with caps; daily decay off. Approved |
+| D017 | Independent review | C-1 and M-1 fixed; L-1 (the caller picks which eligible Checks to pair for a free composition) is **open for your optional review** |
 
 ## Values required before any mainnet deployment
 
-Immutable at deployment: the venue fee rate and opening tick (D009 placeholders), coin name and ticker, coin supply.
-Timelock-settable after deployment but still placeholders: compose coin burns, coin buyout prices (0, disabled),
-weekly bid cap (0.75 ETH), Burner chunk, interval and reserve.
+Immutable: coin name and ticker (the deployment refuses the placeholders), opening tick (173,000), the opening curve.
+Council keys: the council Safe, its signers and threshold, the guardian. Council-settable later: the price schedule
+(placeholder 80-Check 0.25 ETH x units), listing rule, buyout prices. Owner-settable: composition pace and coin
+burns (placeholders until the coin trades), bid and keeper parameters within their bounds.
 
 ## Gates outside the code
 
-1. **Name and ticker**: must be distinct from Black Check / BLKCHK (placeholder `BLACK`; postflight refuses it).
-2. **Council**: membership, threshold (3 of 5 tentative) and guardian; independence is an offchain fact.
-3. **Legal review** of paid chance draws for NFTs and the coin's buyback and buyout mechanics.
-4. **Independent audit** of the scope in docs/AUDIT_SCOPE.md.
-5. **Keeper operation and pay** (keepers are unpaid today).
+1. Name and ticker (invariant 9). 2. Council membership, threshold and guardian (independence is offchain). 3. Legal
+review of paid chance draws and the coin's mechanics. 4. Independent human audit of docs/AUDIT_SCOPE.md (every changed
+line is unaudited; collection-games' rounds cover only its base). 5. FWA keeping V2 creation open on the day
+(`poolCreationEnabled` is checked by the deploy).
 
-## Proven (real mainnet contracts on a pinned fork, block 26,302,000)
+## Proven (real mainnet contracts on a fork at block 26,337,000)
 
-- A contract creates and permanently owns an FWA pool; real draws deliver the chosen prize; owner proceeds match FWA.
-- Survival counted from FWA state alone (listed − withdrawn − active count), excluding expired, timed-out and
-  refunded draws; pending draws block every maintenance, sale and migration.
-- Canonical composition of real tokens: a single from 64 real 80s; a Black Check from 64 real singles (742k gas).
-- Edition migration to a contract vault and reveal; standing bid buying real Checks and a real Edition.
-- Owner can only halt; upgrades and changes need council + 7 days; the guardian cancels; the residual drain power of a
-  council majority is demonstrated, not hidden.
-- Migration between two real FWA pools keeps entitlements and survival.
-- Coin venue on the real Uniswap v4 PoolManager: whole supply locked, 1% ETH fee reaches the acquisition budget end
-  to end; FWA creation fee bought with 0.1303 ETH; surplus released and burned.
-- 50 fork tests, 2 fuzz tests, 4 stateful invariants (strict mode), deploy script simulated with postflight.
+- The collection-games base, imported unchanged, passed 269/281 at its own block (the 12 others only failed writing
+  receipts after passing every assertion).
+- The Checks system passes its whole suite under the deployment build (via-IR, sizes under EIP-170); see STATUS.
+- Survival counted from FWA's own numbers matches the game's ledger draw for draw; decay to the floor; schedule changes
+  both ways.
+- Composition of real Checks with a coin burn or for free after the grace; a Black Check from 64 real singles in one
+  transaction at 8.35M gas; ETH and coin buyouts; an Edition sold and migrated into custody.
+- The council timelock: schedule, 7-day wait, guardian cancel, execute; every value power refuses the owner.
+- Migration from FWA V2 to a real community pool with the Check, its capital and its survival carried (community
+  factory switches opened locally only).
 
 ## Assumptions (not proven)
 
-- Economics from `sim/model.py` (a model): Checks market at ≈0.25 ETH, player demand, coin volume, no rarity premium.
-- FWA's factory owner does not change edge, cooldown or global switches against the game.
-- The council is independent and acts within 7 days when it must.
+- Economics: activation needs about 2.6 ETH of fees (7-22 ETH of first-hour volume by when traders come); an 80-Check
+  floor of about 0.25 ETH; player demand and coin volume are assumptions (sim/results/checks_market.md).
+- FWA's factory owner does not turn V2 against the game (edge, cooldown, switches); the purchase gate closes safely if
+  the edge rises.
+- The council is independent of the owner and acts within its 7 days.
 
 ## Open risks
 
-- Prices lag the market by at least 7 days; a rally underprices prizes until the schedule moves (subsidy).
-- Buy-and-burn has no oracle; its chunk is capped (about 0.5 ETH at the placeholder fee and tick) so a sandwich
-  loses money (D011).
-- With ~20 Originals, Checks leave the pool in about a month at 25 draws a day unless coin fees keep buying.
-- No keeper incentive; maintenance depends on someone running it.
+- The schedule lags the market by at least 7 days: a rally underprices Checks until the council moves it; a crash
+  overprices them (the vault never pays above 120% of it).
+- About 30 ETH of opening depth: thin early market; buybacks move the price visibly.
+- `CollectionPoolOwner` has under 1 KB of size headroom under via-IR.
+- No production successor for the community factory yet (needed only if a migration is proposed).
 
 ## Untested or partly tested
 
-- Wallet-connected writes in the site (rendering and reads were verified at 375px; sends were not).
-- Keeper jobs other than listing and fee forwarding were not run live (decision logic unit-tested; contract paths
-  fork-tested).
-- Real Chainlink VRF timing and gas-price dynamics (VRF words are delivered by impersonation in tests).
+- The site's wallet writes (compose, buy, approve) have not been driven against a deployment; the site typechecks and
+  builds.
+- The keeper's composition job is unit-tested; its live run is part of the rehearsal.
+- Real Chainlink VRF timing (words are delivered by impersonation in tests).
 - No independent human audit.
 
 ## Actions only you can authorize
 
-Any mainnet deployment or broadcast, buying FWA or Checks, launching the coin market, choosing council keys,
-publishing the site, pushing this repository.
+Any mainnet deployment or broadcast, buying FWA or Checks, launching the coin market, choosing council keys and the
+guardian, publishing the site, merging the PR.

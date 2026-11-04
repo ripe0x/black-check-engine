@@ -1,79 +1,69 @@
-// Minimal hand-kept ABIs for the keeper's jobs and reads. No build step; the fork rehearsal checks them against the
-// deployed contracts. Only the functions, events and errors the keeper touches are here.
-import {parseAbi} from "viem";
+// Minimal ABIs for the keeper jobs. Kept by hand (no build step); checked against the contracts by the fork rehearsal.
+import { parseAbi } from "viem";
 
-export const engineAbi = parseAbi([
-  // reads
-  "function controller() view returns (address)",
-  "function halted() view returns (bool)",
-  "function burner() view returns (address)",
-  "function checks() view returns (address)",
-  "function shapes() view returns (address)",
-  "function acquisitionBudget() view returns (uint256)",
-  "function tierNotional(uint256) view returns (uint256)",
-  "function drawsToCompose(uint256) view returns (uint32)",
-  "function survivedDraws(uint256) view returns (uint256)",
-  "function eligible(uint256) view returns (bool)",
-  "function checkListing(uint256) view returns (address controller, uint64 listingId, uint128 price)",
-  "function shapeListing(uint256) view returns (address controller, uint64 listingId, uint128 price)",
-  "function params() view returns (uint16 shapeMarkupBps, uint16 decayBpsPerDraw, uint16 floorBps, uint16 repriceStepBps, uint32 graceDraws, uint16 buyoutMarkupBps, uint16 bidBps, uint128 bidWeeklyCap)",
-  // writes the keeper may call (every one is permissionless on the engine)
-  "function listChecks(uint256[] tokenIds)",
-  "function listShapes(uint256[] shapeIds)",
-  "function reprice(uint256[] tokenIds)",
-  "function restockShapes(uint256[] wonShapeIds)",
-  "function compose(uint256 keep, uint256 burn, bool swap)",
-  "function formBlack(uint256[] tokenIds)",
-  "function collect(address c) returns (uint256)",
-  "function releaseSurplus() returns (uint256)",
-  // events used to discover token ids
-  "event Listed(address indexed collection, uint256 indexed tokenId, address indexed controller, uint256 listingId, uint256 price)",
-  "event Unlisted(address indexed collection, uint256 indexed tokenId, address indexed controller, uint256 listingId)",
-  "event Composed(address indexed by, uint256 indexed survivor, uint256 indexed burned, uint8 tier, uint256 coinBurned)",
-  "event BlackCheck(address indexed by, uint256 indexed survivor, uint256[] burned, uint256 coinBurned)",
-  "event Bought(address indexed buyer, uint256 indexed tokenId, uint8 tier, uint256 ethPaid, uint256 coinBurned)",
-  "event Acquired(address indexed seller, uint256 indexed tokenId, bool fromEdition, uint8 tier, uint256 ethPaid)",
-  "event Restocked(uint256 indexed wonShapeId, uint256 indexed newShapeId, uint256 backing)",
-  // errors, for readable skip reasons
-  "error NotRevealed()",
-  "error TierNotListed()",
-  "error NotListed()",
-  "error AlreadyListed()",
-  "error NotEligible()",
-  "error QueueBusy()",
-  "error BudgetExceeded()",
-  "error NotAllowed()",
-  "error BadInput()",
-  "error Halt()",
-]);
-
-export const checksAbi = parseAbi([
-  "function ownerOf(uint256) view returns (address)",
-  "function getCheck(uint256) view returns (((uint16[6] composites, uint8[5] colorBands, uint8[5] gradients, uint8 divisorIndex, uint32 epoch, uint16 seed, uint24 day) stored, bool isRevealed, uint256 seed, uint8 checksCount, bool hasManyChecks, uint16 composite, bool isRoot, uint8 colorBand, uint8 gradient, uint8 direction, uint8 speed) check)",
-]);
-
-export const controllerAbi = parseAbi([
+export const gameAbi = parseAbi([
+  "function sync() returns (uint256)",
+  "function retireStep() returns (uint256)",
+  "function keeperAvailable() view returns (uint256)",
+  "function lastUpkeepAt() view returns (uint64)",
+  "function PLAYER_UPKEEP_GAS() view returns (uint256)",
+  "function keeperParams() view returns ((uint256 maxGasPrice, uint256 gasOverhead, uint256 flatFee, uint256 payDelay))",
+  "function activate()",
+  "function ready() view returns (bool)",
+  "function activated() view returns (bool)",
+  "function retiring() view returns (bool)",
+  "function retired() view returns (bool)",
+  "function capitalNeed() view returns (uint256)",
   "function pool() view returns (address)",
-  "function unsettled() view returns (uint256)",
-  "function isListed(uint256 listingId) view returns (bool)",
+  "event Captured(uint256 indexed listingId, bool collection, uint256 proceeds, uint256 cost, uint256 ops)",
+  "error NoWork()",
+  "error NotReady()",
+  "error Retiring()",
+  "error NotRetiring()",
 ]);
-
-export const poolAbi = parseAbi([
-  "function unsettledAcquisitionCount() view returns (uint256)",
-  "function ownerProceeds() view returns (uint256)",
-  "function nextSequenceToProcess() view returns (uint64)",
-  "function requestIdAtSequence(uint64) view returns (uint256)",
-  "function acquisitionMeta(uint256) view returns (uint64 sequence, uint64 wordDeadlineBlock, uint64 rewardEpoch, uint16 maxPositiveSlippageBps, uint16 maxNegativeSlippageBps, uint256 randomWord)",
-  "function processAcquisitions(uint256 maxCount) returns (uint256 processed)",
+export const vaultAbi = parseAbi([
+  "function fundGame() returns (uint256)",
+  "function generalBalance() view returns (uint256)",
+  "function sweep() returns (uint256)",
+  "function liveBid() view returns (uint256)",
+  "function activationThreshold() view returns (uint256)",
+  "function nextSweepBlock() view returns (uint256)",
+  "error SweepTooEarly(uint256 nextBlock)",
+  "error NothingToSend()",
 ]);
-
-export const hookAbi = parseAbi([
-  "function forward()",
-  "error NothingToForward()",
-]);
-
 export const burnerAbi = parseAbi([
-  "function burn() returns (uint256 ethIn, uint256 burned)",
-  "error TooSoon()",
-  "error Nothing()",
+  "function process(uint256 minOut) returns (uint256)",
+  "function nextSlice() view returns (uint256 amount, bool milestone, uint256 runAt)",
+  "function priceOk() view returns (bool)",
+  "function reserve() view returns (uint256)",
+  "function release(uint256 listingId) returns (uint256)",
+  "function releaseRetired() returns (uint256)",
+  "function qualifies(uint256 listingId) view returns (bool)",
+]);
+export const migrationAbi = parseAbi([
+  "function started() view returns (bool)",
+  "function successor() view returns (address)",
+  "function migrateApes(uint256 max) returns (uint256)",
+  "function migrateCapital() returns (uint256)",
+]);
+export const sunsetAbi = parseAbi(["function flush() returns (uint256)", "function startedAt() view returns (uint256)"]);
+export const poolOwnerAbi = parseAbi([
+  "event CollectionWon(uint256 indexed listingId, uint256 indexed tokenId, uint256 refCost, uint256 cashCost)",
+  "function listedCount() view returns (uint256)",
+  "function listedAt(uint256 i) view returns (uint256)",
+]);
+// The Checks desk (composition, Black Check formation): the keeper runs only the free deterministic outcome (D008).
+export const deskAbi = parseAbi([
+  "function listingInfo(uint256 listingId) view returns (uint256 tokenId, uint8 tier, uint256 draws)",
+  "function composeParams() view returns ((uint32[7] drawsToCompose, uint32 graceDraws, uint256[7] composeBurn))",
+  "function composeCost(uint256 keepListing, uint256 burnListing, bool swap) view returns (uint256)",
+  "function compose(uint256 keepListing, uint256 burnListing, bool swap)",
+  "function formBlack(uint256[] listingIds)",
+  "error NotEligible()",
+  "error BadInput()",
+]);
+export const fwaPoolAbi = parseAbi([
+  "function processAcquisitions(uint256 maxCount) returns (uint256)",
+  "function nextSequenceToProcess() view returns (uint64)",
+  "function lastIssuedSequence() view returns (uint64)",
 ]);

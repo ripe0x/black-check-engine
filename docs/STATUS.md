@@ -1,14 +1,58 @@
 # Current execution status
 
-Stage: Phase 5. Release candidate `rc2` (commit 6b00eed, local tag) frozen and verified
-(docs/receipts/rc2-verification.md): rc1 plus the rc1 audit fixes. Not re-audited; not deployable until the gates
-below close.
-Branch: `dev` (local). Latest milestone commit: see `git log`.
+Stage: rebase on collection-games (docs/REBASE_PLAN.md), phases R0-R5 built. Tracking PR: ripe0x/black-check-engine#1
+(draft; updated per phase). Not audited, not deployed.
+Branch: `claude/wizardly-shannon-440owk`. The pre-rebase implementation is archived at tag `rc2` (6b00eed).
 
 ## Pinned environment
-- Mainnet fork block 26,302,000; RPC `MAINNET_RPC_URL`, default `https://mainnet.gateway.tenderly.co`.
-- forge 1.8.1, solc 0.8.28 (evm cancun). Submodules: forge-std 7fdf81f, solady v0.1.26, OpenZeppelin v5.1.0.
-- Addresses and runtime code hashes: `test/fork/ForkBase.sol`, `test/fork/Pins.t.sol`.
+- Fork block 26,337,000 for every fork test (after FWA reopened V2 pool creation at 26,335,860; D014, C014). RPC
+  `MAINNET_RPC_URL`; run suites against a local anvil fork of the Tenderly gateway:
+  `anvil --fork-url https://mainnet.gateway.tenderly.co --fork-block-number 26337000 --port 8546`.
+- forge 1.8.1 (982849d, release binaries in ~/.foundry/bin), solc 0.8.28, cancun, `via_ir = true` (C015).
+  `FOUNDRY_PROFILE=fast` (no IR) is for iteration only; its EIP-170 size test fails by design. Use `forge build --force`
+  before a recorded run: an incremental build once kept a stale pool owner inside a test contract.
+- Submodules: forge-std 7fdf81f, solady acd959a, v4-core 59d3ecf, v4-periphery 60cd938, shapes 1b84c10, shape-packs
+  3a463f7. OpenZeppelin only from Shapes' vendored v5.5.0.
+
+## Rebase progress (2026-11-03/04)
+- R0: rc2 tag on the remote; FWA V2 creation off 26,329,277-26,335,859, on again from 26,335,860 (read-only calls).
+- R1 (33440ff): collection-games 409ca75 imported unchanged. Base suite at 26,284,000: 269/281; the 12 throughput
+  studies passed every assertion and stopped only at writing receipts into a missing directory.
+- R2-R5 (b54de86): fork block 26,337,000; council authority in Admin/Governed (D012); Checks pool owner (tiers,
+  schedule, survival C010, decay D005, desk operations); ChecksDesk (composition D008, Black formation, ETH and coin
+  buyouts D006); vault buys 80-Check Originals only, Editions via `sellEdition`, nothing above 120% of the 80 price.
+- R6-R7 (40599e6, 5d8db23): market values D016 (`sim/checks_market.py`); the council is a real OZ TimelockController
+  (Safe proposes, 7 days, guardian cancels); council-only value powers; owner bounds (markup >= 5%, keeper pay caps);
+  survival carried across a migration (`Nft.carried`); a real V2 -> community-pool migration test (community factory
+  switches opened locally only: off on mainnet at this block).
+- R8 (a240060, 8a52cfb): keeper free-composition job (unit 9/9); site Checks page, typecheck and build pass (28 pages);
+  rehearsal script converted (not yet run).
+- R9: independent security review (docs/review/rebase-security-review.md): C-1 (a composite sold at an 80-Check's
+  price in the sunset) and M-1 (buying back below the vault's purchase price) fixed in 0e02aab, L-2 fixed, L-1/L-3
+  recorded (D017). Slither triaged (docs/review/slither-rebase.md, nothing new to fix). Throughput study on the Checks
+  board 12/12 (sim/results/throughput.md). Founder review, audit scope and a sealed audit prompt written.
+- Rehearsal found a bug (fixed in 186c363): the shown live bid could exceed the 120%-of-schedule purchase cap, so a
+  holder taking it was refused; `liveBid` now stops at the cap. Also fixed: the rehearsal script's own bugs (the
+  postflight script did not load the desk and council; a bulk rename had broken its `migrateApes` call).
+- **Candidate evidence (69ead29; contracts as 186c363).** Forced clean via-IR build 35 min; sizes under EIP-170:
+  pool owner 24,069 B (507 B headroom), game 22,392, vault 13,901, token 10,959, hook 7,497, desk 7,193,
+  MigrationAuthority 4,862, Sunset 2,387. `forge test --threads 2 --no-match-path 'test/scenario/Throughput.t.sol'`
+  on a local anvil fork at 26,337,000: 283/283. Throughput study 12/12 (sim/results/throughput.md). Keeper unit 9/9;
+  site typecheck and build pass. Rehearsal end to end on 186c363 (`script/rehearse-anvil.sh`, chain 31337): deploy and
+  postflight, FWA relay and pool, market at the fixed tick, 11.2 ETH of opening-hour fees, a real 80-Check sold at the
+  bid, activation with 160 prizes, router and FWA draws, board change, two more Checks bought, fee overflow and a
+  buyback, postflight again after play, keeper pay 1.10-1.31x real gas, the fee recipient and the migration each
+  through the council's 7-day timelock then 72 hours (owner and strangers refused), settlement refused before
+  retirement (NotSettled), 3 Checks and the capital handed to the successor exactly. Black formation from 64 real
+  singles 8,350,399 gas.
+
+## Next executable action
+1. `rc3` candidate: 69ead29 (tagging is the owner's call: rc1 and rc2 were pushed by the owner). Next work only on
+   review feedback or an audit's findings.
+2. Before any launch: the gates in docs/FOUNDER_REVIEW.md (name, council keys, legal review, human audit, FWA V2
+   creation open on the day).
+
+## History before the rebase
 
 ## Completed
 - Phase 0 (52a0fdc): Foundry project, pinned dependencies, vendored verified sources (`external/`), interfaces
@@ -84,14 +128,6 @@ None.
 - Evidence at b608e19: `forge test --match-path 'test/fork/*.t.sol'` 50 passed, 0 failed; strict invariants
   (8 x 40) hold; `node --test keeper/test/policy.test.mjs` 7/7; site `tsc --noEmit` passes.
 
-## Next executable action
-Owner's choice: a retest of `rc2` (6b00eed) against the rc1 findings and the changed code (Burner, FwaV2Controller,
-VenueLiquidity, FwaFeeBuyer, DeploySystem), and whether to push `rc2`. Findings get fixed on `dev`, affected checks
-repeated, and a new tag frozen. Before any mainnet deployment: final
-venue fee and opening tick, name and ticker, council and guardian keys, legal review, keeper pay, and the
-timelock-settable placeholders in docs/FOUNDER_REVIEW.md. Deployment, the FWA fee purchase and the coin launch need
-explicit owner authorization.
-
 ## Incidents
 - 2026-10-30: during a rehearsal the lead stopped an anvil process on port 8548 that it had not started (forked near
   block 26,286,12x; owned by some other local session or tool, not by either builder). The lead's own anvil had
@@ -105,8 +141,9 @@ explicit owner authorization.
 - No opening fee curve against launch snipers in the candidate (D009 approved without it).
 
 ## Review queue
-Approved 2026-10-30: D001, D003, D005, D006, D007, D009 (fee and tick placeholders). Optional reviews still open:
-D002, D004, D008, D010.
+Approved 2026-10-30: D001, D003, D005, D006, D007, D009 (fee and tick placeholders). Approved 2026-11-03: D012, D013,
+D014, D015 (closes D002, D008, D011; supersedes D004, D010 and part of D009). Still owed before deployment: the
+modelled coin-market launch values (D013), name and ticker, council and guardian keys, legal review.
 
 ## Continuity protocol
 After each meaningful increment, update this file with phase, completed work, exact commands and test outcomes, risks,

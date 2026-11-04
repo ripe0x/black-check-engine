@@ -1,74 +1,59 @@
 # Architecture
 
-Current as of Phase 4. Contracts are not audited and not deployed.
+Current as of the rebase (docs/REBASE_PLAN.md, phases R1-R7). Built on ripe0x/collection-games 409ca75; the
+pre-rebase implementation (UUPS `Engine`) is archived at tag `rc2`. Not audited, not deployed.
 
 ```
-                    council (Safe, proposer) ──► TimelockController (7 days, self-admin) ◄── guardian (cancel)
-                                                          │ upgrades, controller, schedule, params, roles
-                                                          ▼
- players ──ETH──► FWA V2 pool ◄──owns── FwaV2Controller ◄──engine-only── Engine (UUPS proxy) ◄── keepers / anyone
-     ▲  prizes        (FWAClone)          (immutable)                     │ custody: Checks, Shapes, ETH
-     └────────────────────────────────────────────────────────────────────┤ operator: halt only
-                                                                          ├─► Checks (canonical composite/infinity/mint)
- collectors ──ETH / coin──► buyWithEth / buyWithCoin                      ├─► Shapes (restock mint)
- sellers ──Check / Edition──► sellCheck / sellEdition (standing bid)      └─► Coin.burnFrom (composition, coin buyout)
+ council Safe ──propose──► TimelockController (7 days; guardian cancels; anyone executes) ── Admin.council
+ owner (operator) ─────────────────────────────────────────────────────────────────────── Admin.owner
+     │ bounded settings, pause, instant sunset (buybacks only)        │ schedule, listing rule, buyout prices,
+     │                                                                │ coin allowlist/unrestrict, $LAYER share,
+     ▼                                                                ▼ migration and fee-recipient proposals
+ players ──ETH──► DrawRouter ──► FWA V2 pool ◄──owns── CollectionPoolOwner ◄── ChecksDesk (compose, Black, buyouts)
+                                    │ prizes          (Checks, Shapes, Packs;     ▲
+                                    ▼                  survival, decay, gate)      │ coin burns, ETH buyouts
+                              CollectionGame (ledger: booking, board, keeper pay, surplus split)
+                                    │ surplus                     ▲ capital
+                                    ▼                             │
+ traders ──► CollectionHook (5%, opening curve) ──fees──► FundingVault (live bid: 80-Checks, Editions, Seaport)
+                                                                  │
+                     CollectionBurner (milestone reserve released on a Check won; bounded slices) ◄── surplus
+ MigrationAuthority (council proposal + 72 h, code pinned) ──► successor │ Sunset (Dutch auction → buy-and-burn)
 ```
 
 ## Contracts
 
-| Contract | File | Role |
+| Contract | Origin | Role in the Checks game |
 | --- | --- | --- |
-| `Engine` | src/core/Engine.sol | Custody and lifecycle. Lists, decays, composes, sells, buys, restocks, migrates. UUPS; only the timelock upgrades or reconfigures it |
-| `FwaV2Controller` | src/fwa/FwaV2Controller.sol | Permanent owner of one FWA V2 pool; engine-only; derives survival in O(1) (C010) |
-| `Coin` | src/token/Coin.sol | Fixed-supply ERC20 placeholder with `burnFrom` |
-| `TimelockController` | OpenZeppelin v5.1.0 | Council proposals, 7-day delay, guardian cancel, open execution |
-| `VenueLiquidity`, `VenueHook` | src/venue/ | Coin market on Uniswap v4: whole supply locked single-sided; flat ETH fee to acquisitions (D009) |
-| `Burner` | src/treasury/Burner.sol | Ownerless buy-and-burn of released game surplus (D010) |
-| `FwaFeeBuyer` | src/periphery/FwaFeeBuyer.sol | Buys FWA's pool-creation fee with ETH into the controller |
-| Deployment | script/DeploySystem.sol | The single deployment routine and postflight used by tests and scripts |
+| `Admin`, `Governed` | collection-games, council added (D012) | The owner (operator, two-step, renounceable) and the council timelock (only the council replaces itself) |
+| `TimelockController` | OpenZeppelin v5.5.0 (Shapes' vendored copy) | The council: council Safe proposes, 7 days, guardian cancels, anyone executes, self-administered |
+| `CollectionPoolOwner` | collection-games, changed for Checks (C016) | Permanent FWA V2 pool owner and custody of Checks, Shapes and Packs. Tier read from Checks; council price schedule per tier (D003); survival = listed - withdrawn - active (C010, D002); decay per survived draw to a floor (D005); exposure target; live purchase gate; desk-only compose, Black formation and release |
+| `ChecksDesk` | rc2 `Engine` (new contract) | Composition (coin burn for a choice, free deterministic outcome after the grace, D008), Black Check formation from 64 singles, ETH buyouts (schedule + markup, at least 10%) and coin buyouts (council prices, off at launch, D006). Holds nothing |
+| `CollectionGame` | collection-games, bounds added | The ledger: books every draw once, the Shapes and Packs board and its growth, keeper pay (capped, D012), markup at least 5%, surplus split |
+| `FundingVault` | collection-games, changed | Trading fees and contributions; the live bid buys 80-Check Originals only, Editions migrate through `sellEdition`, Seaport fills; nothing booked above 120% of the 80 price (D012) |
+| `CollectionToken`, `CollectionHook`, `ProtocolLiquidity` | collection-games | Fixed-supply coin restricted to its pool (allowlist and unrestriction: council), `burnFrom` for the desk; 5% fee after the fixed 69% opening curve; single-sided launch at tick 173,000 (D016); owner or council opens it, only after the FWA pool exists |
+| `CollectionBurner` | collection-games | Buy-and-burn; every gameplay buyback held until a Check is won, then released whole (D016) |
+| `MigrationAuthority`, `Sunset` | collection-games, proposer changed | Council-proposed migration or fee recipient, then 72 hours, code pinned, anyone executes; the owner's instant sunset auctions every Check and sends every wei to buy-and-burn |
+| `DrawRouter`, `Lens`, `SeaportAdapter`, `FwaFeeRoutes`, `LayerTap` | collection-games | Player draws with upkeep; views; hardened marketplace fills; FWA creation fee; the dormant $LAYER tap |
+| Draw Packs | ripe0x/shape-packs 3a463f7 | Pack prizes of the fewest Shapes |
 
 ## Lifecycle of a Check
 
-1. **Enters custody**: bought at the standing bid (`sellCheck`, or `sellEdition`, which migrates an Edition to an
-   80-Check Original), or sent in. A Check that was won and comes back starts with no history.
-2. **Listed** (`listChecks`, anyone): only revealed Originals at tiers with a schedule price; FWA notional =
-   schedule × decay share. The controller lists only into an empty FWA queue, so the listing is live at once.
-3. **Survives draws**: every draw that allocates any prize while the Check stays listed counts one survived draw
-   (D002, C010).
-4. **Decays** (`reprice`, anyone, empty queue): notional falls by `decayBpsPerDraw` of the schedule per survived
-   draw, linearly, to `floorBps` (D005); changes under `repriceStepBps` wait. A schedule change through the timelock
-   moves prices up or down; earned decay is kept.
-5. **Composes** (`compose`, `formBlack`, anyone, empty queue): both inputs past their tier threshold. A free choice
-   of survivor or visual burns `composeBurn[tier]` coin; after `graceDraws` more draws the deterministic outcome is
-   free (D008). The survivor is relisted at its new tier with a fresh history.
-6. **Leaves**: won by a player (FWA delivers it), bought for ETH at schedule × (1 + markup), bought by burning the
-   tier's coin price (disabled at launch, D006), or burned inside canonical composition.
+1. **Arrives**: sold to the vault's live bid (80-Check Originals only), an Edition sold and migrated (`sellEdition`),
+   a Seaport fill, or a donation. Registered with its tier.
+2. **Listed** at its tier's schedule price, in batches, within the exposure target; a tier without a price waits.
+3. **Survives draws**: each draw that allocates any prize while it stays listed counts one, from FWA's own counts.
+4. **Decays** 0.2% of its schedule price per survived draw, to 85% (D005); a council schedule change reprices up or
+   down keeping earned decay. Optional daily decay, off at launch.
+5. **Composes** (desk): two eligible Checks of a tier at most 5, after `drawsToCompose`; a free choice burns coin, the
+   deterministic outcome is free after the grace (the keeper runs it). The survivor returns for a new episode.
+   64 eligible singles form a Black Check (8.35M gas measured).
+6. **Leaves**: won (FWA delivers it; the burner releases the milestone reserve), bought with ETH or coin through the
+   desk, burned in composition, or handed to a successor or the Sunset after retirement.
 
-## Money
+## Authority (D012)
 
-| Flow | Source | Destination | Bound |
-| --- | --- | --- | --- |
-| Draw fees | players | FWA; owner share → controller → engine (`collect`) | FWA formula |
-| ETH buyouts | collectors | `acquisitionBudget` | published price |
-| Coin fees | `VenueHook` (flat ETH fee each way) | `acquisitionBudget` via `forward` → `fundAcquisitions` | immutable rate |
-| Standing bid | `acquisitionBudget` | sellers | schedule × `bidBps`, `bidWeeklyCap` per week |
-| Shape restock | game capital (balance − budget) | Shapes contract | only for won Shapes, at recorded backing |
-| Surplus | game capital above budget + `gameReserve` | `Burner` (buys coin on the venue, burns it) | daily release; `maxPerBurn` per interval |
-
-Not built yet: keeper pay. The FWA creation fee is bought with ETH through `src/periphery/FwaFeeBuyer.sol`.
-
-## Upgrade and migration
-
-- Engine upgrades: council proposes, 7 days, anyone executes; the guardian can cancel. A council majority can
-  upgrade to anything (disclosed residual trust, docs/THREAT_MODEL.md).
-- New FWA version or new pool: deploy a new controller, `setController` through the timelock. The old pool stops
-  taking draws; pending draws settle there; anyone migrates inventory with survival carried; old proceeds remain
-  collectable.
-
-## Constraints from the real dependencies
-
-- FWA: pool ownership is permanent and one pool per address; listing changes need an empty queue; repricing and
-  withdrawal lock while any draw is unsettled; the factory owner controls edge, cooldown and global switches.
-- Checks: `composite` needs the caller to own both tokens; `infinity` takes exactly 64 singles (742k gas);
-  Editions migrate through `mint`, which needs the Checks contract approved on Editions; art fixes 51 blocks later.
-- Shapes: mint fee 0.001 ETH per Shape on top of backing.
+The owner cannot move custody, redirect fees, change what Checks are worth, or approve new code. Those powers are the
+council timelock's, and a migration additionally waits the MigrationAuthority's 72 hours with the successor's code
+pinned. Owner settings that can reach value are bounded by constants. The disclosed residual trust: a council
+majority, after 7 days that the guardian can cancel, and 72 more hours in public, can migrate to code of its choosing.

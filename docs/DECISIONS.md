@@ -26,7 +26,7 @@ Reversibility: messaging and acquisition policy only; no code committed.
 Owner action: Optional review.
 
 ### D002: Count a draw as survived when FWA allocated a prize, not when delivery completed
-Status: REVIEW
+Status: APPROVED 2026-11-03 (D015)
 Importance: Medium
 Why it came up: Building the survival cursor against the real FWA clone (E3). The spec says DeliveryRefunded earns no
 credit and DeliveryPending must be resolved first. FWA leaves a failed delivery pending until the winner calls
@@ -68,7 +68,7 @@ Reversibility: an engine upgrade could add a quote path later.
 Owner action: Required before finalization.
 
 ### D004: List Shapes at backing + 10%, not exact backing
-Status: REVIEW
+Status: SUPERSEDED by D015 (board markup)
 Importance: Medium
 Why it came up: Phase 3 model (`sim/model.py`). Replacing a won Shape costs its backing plus the 0.001 ETH Shapes
 mint fee, 10% on a 0.01 ETH Shape, while the owner keeps only 2.5% over the harmonic mean per draw.
@@ -141,7 +141,7 @@ Reversibility: an adapter can be added by upgrade.
 Owner action: Required before finalization.
 
 ### D008: Measure the composition decision window in draws, not time
-Status: REVIEW
+Status: APPROVED 2026-11-03 (D015)
 Importance: Medium
 Why it came up: Phase 4. The spec gives participants a short time window to compose by choice (burning coin) before
 a keeper's free deterministic fallback. Eligibility is derived from FWA state, so there is no recorded moment when a
@@ -158,7 +158,7 @@ Reversibility: one condition.
 Owner action: Optional review.
 
 ### D009: Coin venue: full supply locked single-sided on Uniswap v4, flat ETH fee to acquisitions, no opening curve
-Status: APPROVED
+Status: APPROVED, then partly SUPERSEDED by D013 (fee rate, opening curve, restriction); single-sided full-supply liquidity and the fixed opening tick stand
 Owner decision (2026-10-30): design (a) accepted. The 1% fee and the opening tick 161,200 stay placeholders for the release candidate. Both are immutable at deployment, so final values are required before any mainnet deployment. No opening curve in the candidate (a contained addition if launch sniping is judged to matter).
 Importance: High
 Why it came up: Phase 4 venue (R12). The coin needs a market and a fee that funds Checks without an owner who can
@@ -182,7 +182,7 @@ Reversibility: immutable once launched; everything before launch is free to chan
 Owner action: Required before real execution (final fee rate and opening tick).
 
 ### D010: Game surplus: daily release above a reserve, burned in capped chunks without an oracle
-Status: REVIEW
+Status: SUPERSEDED by D013
 Importance: Medium
 Why it came up: Phase 4. The spec's waterfall ends with buying and burning coin from distributable game surplus, with
 a restricted swap path, slippage limits and a trusted quote. There is no trusted coin price (D006).
@@ -203,7 +203,7 @@ above half the venue fee's share of the pool's virtual ETH depth at the opening 
 placeholder fee (1%) and tick (161,200) the depth is 99.89 ETH and the largest chunk 0.4995 ETH.
 
 ### D011: rc1 audit findings and their fixes
-Status: REVIEW
+Status: CLOSED 2026-11-03 (D015). The purchaser gate (H2) and timelock launch (H3) carry into the rebase; the H1 chunk bound is superseded by D013's burner bounds; FwaFeeBuyer (M1) is replaced by collection-games' FwaFeeRoutes
 Importance: High
 Why it came up: The owner-arranged fresh-discovery audit of `rc1` (docs/review/rc1-audit.md) reproduced three High and
 one Medium finding plus a deployment-gate defect on a fork pinned at block 26,305,656.
@@ -238,6 +238,131 @@ burner construction reverts with `ChunkTooLarge`.
 Reversibility: burner and controller are replaceable through the timelock; the venue and hook are immutable once
 deployed (not deployed).
 Owner action: Optional review (the H1 chunk bound caps burn speed).
+
+### D012: Rebase on collection-games: whose authority over migration and fee routing?
+Status: APPROVED 2026-11-03, option (b). Owner: "keep this one more locked down". Invariants 10 and 11 stand.
+Importance: High
+Why it came up: The owner directed that ripe0x/collection-games (409ca75) be the base (docs/REBASE_PLAN.md). Its
+administration is one owner acting at once, with migration and fee-recipient changes proposed by that owner on
+72 hours' notice (collection-games D57, D63, SECURITY.md "Administration"). A migration hands every NFT and the
+vault's ETH to the proposed contract, so the owner alone can move custody to code it controls. That conflicts with
+invariants 10 and 11.
+Desired outcome: Collection-games' simpler permanent contracts, code-pinned migration and Sunset, without one key
+being able to drain custody.
+Options considered: (a) adopt collection-games' model and amend invariants 10 and 11; (b) collection-games'
+structure with the council timelock (7 days, guardian cancel) as proposer of migrations and fee recipients, the
+owner keeping the instant Sunset (buybacks only), pause and bounded settings, with constant bounds restored on
+instant powers that can move value (markup floor, keeper gas-price and fee caps, a bid ceiling against the schedule,
+no $LAYER share, allowlist through the timelock); (c) keep this repository's UUPS Engine and port only components.
+Recommended choice: (b). It keeps the invariants and drops the residual "council majority can upgrade to anything"
+risk of the UUPS Engine in favour of a public, code-pinned migration.
+Tradeoff: Migrations and fee-route changes take 7 days and need the council; the founder alone cannot ship a new
+system.
+Action taken: None in code yet. Plan phase R7 builds (b). Each instant owner power that can move value gets a
+constant bound or moves behind the timelock. Every constant gets a test in which a hostile owner calls the function.
+Reversibility: Cheap before deployment; after deployment only through a migration.
+Owner action: None (approved).
+
+### D013: Coin market mechanics from collection-games
+Status: APPROVED 2026-11-03, option (b) as recommended. Supersedes D009 (fee and curve) and D010.
+Importance: High
+Why it came up: Collection-games' hook, token and burner replace D009 and D010: a 5% fee, an immutable 69% opening
+curve against snipers, transfers restricted to the canonical pool (with an allowlist) so that side pools cannot avoid
+the fee, a burner protected by same-block price and impact bounds instead of a small chunk, and buybacks locked until
+a win. This repository's open items include "no opening fee curve".
+Options considered: (a) keep D009/D010 on the new contracts; (b) adopt the mechanics with values from this
+project's model; (c) adopt collection-games' values as they are.
+Recommended choice: (b). No $LAYER share. The milestone release fires on a Check won. Restriction only if
+`unrestrict` stays reachable through the timelock.
+Tradeoff: Restriction blocks wallet transfers and exchange deposits until lifted; the opening curve can make
+scanners label the coin a honeypot for about an hour (collection-games LAUNCH_CHECKLIST item 6).
+Owner, 2026-11-03: the implementer sets the launch values from the model (recorded as its own entry when done).
+Action taken: None yet (plan phase R6). Collection-games' launch values (5% each way, 69% curve falling one point
+a minute, slice <= 1 ETH, impact <= 5%, deviation <= 3%) stand as placeholders until this project's model sets
+them. The opening tick and the curve are immutable, so they need the owner's sign-off on the modelled numbers
+before deployment.
+Reversibility: Hook curve and opening tick are immutable once deployed; fee rate and burner cadence are settings.
+Owner action: Confirm the modelled launch values before deployment.
+
+### D014: FWA venue after V2 pool creation was switched off
+Status: APPROVED 2026-11-03, option (a): stay on FWA V2.
+Importance: High
+Why it came up: FWA switched off V2 pool creation at block 26,329,277 and deployed community pool contracts
+(factory 0x8919…477C, block 26,328,828), per collection-games D89. Every fork test here is pinned earlier (26,302,000).
+A community pool pays its owner the base price only; collection-games estimated its margin at about 11% → 8.7%.
+Options considered: (a) V2, with FWA reopening creation for this deploy; (b) community pools from the start.
+Recommended choice: (a) if FWA reopens V2 for us, with the community pool as the real migration target that replaces
+`NextGenControllerMock` (invariant 11 evidence). Otherwise (b), with the economics re-run at the lower margin.
+Evidence (read-only eth_call on the V2 factory 0xf5a3…300c through the Tenderly public gateway, 2026-11-03):
+`poolCreationEnabled` true at 26,329,276, false from 26,329,277 to 26,335,859, true from 26,335,860
+(2026-11-03 17:46:23 UTC) through 26,337,042 (latest read). At the latest block `betaAccess` false, `edgeBps` 500,
+`vrfRequestsPaused` false, `maxPoolsPerWallet` 1. At this repository's pinned block 26,302,000, `betaAccess` was
+true.
+Action taken: Venue fixed as V2. Plan phase R2 adds a fork profile after block 26,335,860 that creates a real V2 pool
+with no locally opened switches. The community pool port (collection-games 72d5179) is used only as the real
+migration target in R7. The deploy keeps its `poolCreationEnabled()` precheck.
+Reversibility: Pool ownership is permanent per pool; changing venue later means a migration.
+Owner action: None (approved).
+
+### D015: Remaining rebase choices (owner: "do your recs for the rest")
+Status: APPROVED 2026-11-03, as recommended below.
+Importance: Medium
+- Seaport adapter: **built** (owner, 2026-11-03, reversing the first recommendation). Collection-games'
+  `SeaportAdapter` with its audit fixes: D66 F-2 (prefund), D68 R3-12 (inflow counted in transient storage), D70 F1/F2/B-F1
+  (exact signed consideration count, no item paying the vault or custody, CONTRACT orders refused). Rounds 4-8 found
+  nothing new in it. Still open there, attempted but not proven safe: ERC-1271, zone and conduit orders with a hostile
+  callback. For Checks it fills one order at or below the tier's standing bid less the finder fee; the Check must
+  reach custody in the same call; its tier is read on-chain from Checks; 80-Check Originals (revealed or not; tier is fixed at mint) at scheduled tiers.
+  It sits alongside D007's standing bid and does not replace it.
+- Sunset: adopted as the built-in end state. Every Check is auctioned in a Dutch auction from 150% of its schedule
+  price down to 25% over 30 days; every wei goes to buy-and-burn; the owner can trigger it at once and it is final
+  (D012). It can end the game early, but it cannot send value to anyone.
+- Keeper pay: collection-games' structure. Gas plus a flat fee, within an allowance earned from captures; players
+  run light upkeep through the DrawRouter unpaid; the owner fixes how much one call books. Per D012, the gas-price
+  cap, overhead and flat fee get constant upper bounds. Launch placeholders are collection-games' (3 gwei cap,
+  70,000 overhead, 0.0002 ETH fee, 1% of each capture, 0.2 ETH opening allowance), until the maintenance model sets
+  them.
+- Daily decay: built, off at launch (collection-games D78), as an addition to the per-draw decay (D005), never below
+  its floor, with a constant bound on the rate.
+- Older optional reviews: D002 (survival counts draws that allocated a prize) and D008 (the composition window
+  counted in draws) are kept as implemented. D004 is superseded by the board markup setting (10% placeholder, the
+  same as D004's 10% over backing). D010 is superseded by D013.
+
+### D016: Coin market launch values for Checks
+Status: APPROVED 2026-11-03 by delegation (owner: "figure it out yourself"); provisional on the model, open to review
+Importance: High (the opening tick and the curve are immutable once deployed)
+Why it came up: D013 adopted collection-games' market mechanics; their values were set for a 6 ETH Ape.
+Evidence: `python3 sim/checks_market.py` (sim/results/checks_market.md), on collection-games' exact pool math.
+- Activation needs about 2.62 ETH of fees (first 80-Check 0.25 + board 1.666 + reserve 0.5 + keeper allowance 0.2):
+  7 ETH of first-hour volume if it comes evenly, 22 ETH if traders wait for the end of the curve, at any ordinary
+  fee from 3% to 10% (the curve dominates the first hour).
+- Opening valuation sets depth. At 30.7 ETH (tick 173,000) a 1 ETH buy moves the price 6.3%, the largest buyback
+  slice within the burner's 3% impact bound is 0.46 ETH (a Check win's pot burns in one or two slices), and a
+  minute-0 1 ETH buyer needs 28 ETH of later buying to break even. At 10 ETH slices fall to 0.15 ETH (more,
+  smaller sandwichable slices); at 100 ETH the opening valuation is three times higher for little gain.
+Choice: opening tick 173,000 (about 30.7 ETH fully diluted, as collection-games); ordinary fee 5% each way
+(owner-adjustable to 10%); the fixed 69% opening curve; burner bounds as collection-games (slice at most 1 ETH, 3%
+impact, 2% deviation at launch); all gameplay buybacks held in the milestone reserve and released whole when a Check
+is won (`milestoneBps` 100%, `firstExitBps` 100%, no release for a big Shape or Pack); no $LAYER share.
+Tradeoff: a thin opening market (about 30 ETH of depth) in exchange for buybacks that move the price visibly; the
+opening valuation in dollars moves with ETH until launch.
+Reversibility: tick and curve immutable at deployment; fee, cadence and tiers are bounded settings.
+Owner action: Optional review before deployment.
+
+### D017: Independent review of the rebase (C-1, M-1 fixed; L-1, L-3 accepted)
+Status: APPROVED by the implementer under its authority (fixes are bugs; the accepted items are recorded for review)
+Importance: High
+Evidence: docs/review/rebase-security-review.md.
+- C-1 fixed: composition carries the inputs' cost; the Sunset prices from max(recorded cost, schedule).
+- M-1 fixed: ETH buyout markup at least 25% (was 10%), priced from max(schedule, recorded cost).
+- L-2 fixed: a Check that left by a win or buyout can come back as a new arrival.
+- L-1 accepted: past the grace the caller may choose which eligible Checks to pair (and which 64 singles), keep/burn
+  within the pair being deterministic; the keeper's fallback pairs the longest survivors. A choice of art (swap, or
+  keeping the shorter survivor) still costs coin, which the owner sets (it can set it to zero: a pace setting, no value
+  moves).
+- L-3 corrected in the spec: unrevealed Originals are accepted and listed (tier is fixed at mint; reveal follows by
+  epoch); Checks enforces its own rules at composition.
+Owner action: Optional review of L-1 (whether the free pairing should be canonical on-chain).
 
 Use this template:
 
@@ -293,6 +418,30 @@ Record important noncontroversial implementation choices with evidence and commi
 - C009 One upgradeable `Engine` holds custody and lifecycle (vault and engine merged). Splitting them would not
   reduce trust, since an upgrade of either could move assets. Per-pool `FwaV2Controller`s stay immutable because FWA
   pool ownership is permanent and one pool per address. Evidence: `test/fork/Migration.t.sol`.
+
+- C013 Rebase (R1, 33440ff): collection-games 409ca75 imported unchanged; OpenZeppelin now only from the copy Shapes
+  vendors (v5.5.0, `TimelockController` included), the separate v5.1.0 submodule removed. Base suite on the base's block
+  26,284,000: 269 of 281 pass; the 12 throughput studies passed every assertion and stopped only at writing receipts into
+  a directory not yet copied (`docs/receipts/throughput/`, now created).
+- C014 Fork block 26,337,000 for every fork test (R2): after FWA reopened V2 pool creation (26,335,860, D014), so pool
+  creation is proven without opening any FWA switch locally.
+- C015 Global `via_ir` again (R3): the Checks pool owner is 27,660 B without it, 23,377 B with it (EIP-170 24,576). The
+  deploy routine imports every contract, so a per-file restriction would compile the whole system with IR anyway.
+  collection-games compiled without it, so its gas receipts are not comparable one to one.
+- C016 Checks custody on the base (R3): the pool owner keeps collection-games' structure (batched listing, exposure
+  target, rows asked for, per-listing settlement, live purchase gate) and changes only what Checks need: a tier read
+  from Checks at registration, a council-set price schedule per tier (D003), survival counted from FWA's own numbers
+  (listed - withdrawn - active, C010, from rc2), decay per survived draw to a floor (D005), a schedule change repricing
+  both ways, a refunded delivery starting a new episode, and three desk-only operations (compose, Black formation,
+  release to a buyer) that withdraw open, active listings only with nothing unsettled. Composition and buyout rules
+  live in a separate immutable `ChecksDesk` (from rc2 `Engine`), which holds nothing.
+
+- C017 Survival carried across a migration (R7, 5d8db23): retirement records each withdrawn Check's survived draws in
+  `nfts(tokenId).carried`; a successor reads it (spec 7.3). Proven on a real community pool with a test-only
+  successor (test/fork/MigrationCommunity.t.sol); a production successor compiled for the community factory is a
+  follow-up, needed only if a migration is ever proposed.
+- C018 Via-IR clock reads in tests (5d8db23): rc2's C011 applies again; tests use `vm.getBlockTimestamp()` and
+  `vm.getBlockNumber()`. On 40599e6 four via-IR failures came only from this.
 
 ## FOUNDATIONAL COMMITMENTS
 Follow the constraints in CLAUDE.md. If a real technical constraint conflicts with one, document it and recommend the simplest alternative while advancing independent work.

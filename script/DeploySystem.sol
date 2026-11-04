@@ -1,174 +1,550 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {CommonBase} from "forge-std/Base.sol";
-import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {IFWAFactory} from "../src/interfaces/IFWA.sol";
-import {IController} from "../src/interfaces/IController.sol";
-import {IChecksOriginals, IChecksEdition} from "../src/interfaces/IChecks.sol";
-import {Engine, IShapesBacking, ICoinBurn} from "../src/core/Engine.sol";
-import {FwaV2Controller} from "../src/fwa/FwaV2Controller.sol";
-import {Coin} from "../src/token/Coin.sol";
-import {VenueLiquidity} from "../src/venue/VenueLiquidity.sol";
-import {VenueHook, IFundAcquisitions} from "../src/venue/VenueHook.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
-import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
-/// @notice The one deployment routine. Tests, the anvil rehearsal and any future mainnet script call `deploySystem`
-///         and `postflight`; environments differ only in the `Config` values.
-/// @dev Creation order is fixed so the controller can be built with the engine proxy's address before the proxy
-///      exists (the engine is initialized with the controller, the controller is immutable on the engine).
-///      `deployer` must be the account whose nonce the `new` calls use (the test contract, or the broadcaster);
-///      `create2Deployer` is the account that executes `new{salt}` (the test contract, or forge's CREATE2 factory in a
-///      script). The coin is minted straight to the venue's liquidity contract, whose address is predicted.
-///      The market opens later, when the deployer (or, failing it, the timelock) calls `VenueLiquidity.launch()` once,
-///      at the price fixed here.
-abstract contract DeploySystem is CommonBase {
+import {CollectionToken} from "../src/token/CollectionToken.sol";
+import {CollectionHook} from "../src/token/CollectionHook.sol";
+import {ProtocolLiquidity} from "../src/token/ProtocolLiquidity.sol";
+import {FundingVault} from "../src/core/FundingVault.sol";
+import {CollectionPoolOwner} from "../src/core/CollectionPoolOwner.sol";
+import {CollectionGame} from "../src/game/CollectionGame.sol";
+import {CollectionBurner} from "../src/treasury/CollectionBurner.sol";
+import {Admin} from "../src/core/Admin.sol";
+import {MigrationAuthority} from "../src/migration/MigrationAuthority.sol";
+import {Sunset} from "../src/migration/Sunset.sol";
+import {Lens} from "../src/periphery/Lens.sol";
+import {DrawRouter, IGameSync} from "../src/periphery/DrawRouter.sol";
+import {SeaportAdapter} from "../src/periphery/SeaportAdapter.sol";
+import {LayerTap} from "../src/periphery/LayerTap.sol";
+import {ChecksDesk} from "../src/checks/ChecksDesk.sol";
+import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
+
+interface IPacksView {
+    function shapes() external view returns (address);
+    function MIN_PACK_VALUE() external view returns (uint256);
+    function admin() external view returns (address);
+    function renderer() external view returns (address);
+    function name() external view returns (string memory);
+    function symbol() external view returns (string memory);
+}
+
+interface IShapesUnit {
+    function unit() external view returns (uint256);
+}
+
+/// @notice The one deployment routine, shared by the scripts and the fork tests so the tests exercise exactly what is
+///         broadcast: the Ape Draw coin (token, liquidity, hook, burner), its game (vault, pool owner, game, Draw Packs,
+///         the Seaport adapter) and the end-of-life contracts (MigrationAuthority, Sunset). One `Admin` contract names
+///         the owner of every governed contract (two-step transfer, renounce; D57). `postflight` reads every
+///         reference, permission and launch value back.
+abstract contract DeploySystem {
+    Vm private constant VM = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+
     struct Config {
-        address council; // sole timelock proposer (Safe multisig in production)
-        address guardian; // extra canceller; halts and resumes draws
-        address operator; // project owner: halt only
-        uint256 delay; // timelock delay, at least 7 days
-        IChecksOriginals checks;
-        IChecksEdition editions;
-        IShapesBacking shapes;
-        IFWAFactory fwaFactory;
-        address fwaImplementation; // pinned; the controller refuses a pool of any other code
-        bytes32 poolSalt;
-        string coinName;
-        string coinSymbol;
-        uint256 coinSupply;
-        IPoolManager poolManager; // Uniswap v4
-        uint256 venueFeeBps; // flat ETH fee on coin swaps, to acquisitions (D009)
-        int24 venueStartTick; // opening price, fixed in the venue at deployment (D009)
-        uint256[8] tierNotional;
-        uint32[7] drawsToCompose;
-        uint256[7] composeBurn;
-        uint256[8] coinPrice;
-        Engine.Params params;
+        // administration
+        address owner; // the operator: routine bounded settings (two-step transferable, renounceable)
+        address councilSafe; // the council (a Safe, 3 of 5 tentative): the timelock's only proposer (D012)
+        address guardian; // cancels a scheduled council action
+        uint256 councilDelay; // the timelock's delay (7 days)
+        // external
+        address collection; // Checks Originals
+        address editions; // Checks Editions (never a purchaser)
+        address shapes;
+        address fwaFactory;
+        address fwaImplementation;
+        address poolManager;
+        address seaport; // the marketplace the vault's one adapter fills orders on (address(0): no adapter)
+        address create2Deployer; // the address whose CREATE2 deploys the hook (the deterministic proxy in scripts)
+        bool create2Direct; // tests: the deploying contract itself runs CREATE2 (create2Deployer is that contract)
+        // coin
+        string name;
+        string symbol;
+        string coinImage; // the coin's image URL in its contract URI (may be empty; the owner may set it later, D86)
+        string coinDescription; // the coin's description in its contract URI (may be empty; settable later, D86)
+        uint256 supply;
+        int24 startTick; // the opening price, coin per ETH (fixed in ProtocolLiquidity; the owner only opens the market)
+        uint256 buyFeeBps;
+        uint256 sellFeeBps;
+        // board and pricing (game settings)
+        uint256[] boardPattern; // repeated without end; the board grows as the collection NFTs need it
+        uint256 initialBoardSize;
+        uint256 listBatch;
+        uint256 maxPerCall; // prizes one maintenance call lists, sized for EIP-7825's gas cap (D61)
+        uint256 bookPerCall; // requests one sync or retireStep books, sized for the same cap
+        uint256 markupBps;
+        uint256 opsBps; // keeper allowance earned per capture
+        CollectionGame.Settings settings;
+        // keepers: paid by the game, gas plus a flat fee, within the allowance
+        CollectionGame.KeeperParams keeper;
+        uint256 openingAllowance; // keeper pay available before any capture (listing the opening board)
+        // collection listings
+        uint256 maxInFlight;
+        CollectionPoolOwner.ListingParams listing;
+        uint256[8] schedule; // price per Checks tier (D003; council-settable)
+        // the Checks desk: composition pace and burns (owner), buyout prices (council)
+        ChecksDesk.ComposeParams compose;
+        ChecksDesk.BuyoutParams buyout;
+        // acquisition: the vault's standing bid
+        FundingVault.BidParams bid;
+        uint256 refPrice; // the live floor at deploy
+        uint256 firstThresholdBps; // the first activation threshold, of `refPrice` (later ones: `bid.thresholdBps`)
+        uint256 overflowBps; // fee overflow share (D64)
+        uint256 layerBps; // $LAYER share of each trading fee after the launch curve, taken by the hook (D90)
+        address layerBurner; // artcoins' $LAYER burn router the LayerTap forwards to (address(0): none)
+        // Draw Packs: a dedicated instance of lib/shape-packs (`ShapePacks`) for this game's Pack prizes
+        string packsName;
+        string packsSymbol;
+        uint256 packMinUnits; // the Pack minimum, in Shapes units (2: a 0.02 ETH Pack)
+        // buybacks
+        uint256 milestoneBps; // share of each surplus locked in the burner's milestone reserve
+        CollectionBurner.Cadence cadence; // buyback cadence (D64)
+        CollectionBurner.Tiers tiers; // milestone release tiers (D64)
     }
 
     struct System {
-        TimelockController timelock;
-        Coin coin;
-        Engine implementation;
-        Engine engine;
-        FwaV2Controller controller;
-        VenueLiquidity liquidity;
-        VenueHook hook;
+        Admin admin;
+        TimelockController council; // value and custody powers (D012): Admin.council
+        MigrationAuthority migration;
+        ProtocolLiquidity liquidity;
+        CollectionToken token;
+        CollectionBurner burner;
+        FundingVault vault;
+        CollectionHook hook;
+        CollectionPoolOwner poolOwner;
+        ChecksDesk desk;
+        CollectionGame game;
+        Sunset sunset;
+        SeaportAdapter adapter;
+        Lens lens;
+        DrawRouter drawRouter; // stateless player entry point (D53)
+        address packs; // the dedicated Draw Packs instance
+        address packRenderer;
+        address layerTap; // collects the hook's $LAYER share for artcoins' burn router (address(0): none)
     }
 
-    error Postflight(string what);
+    error DeployMismatch(string what);
 
-    function deploySystem(Config memory c, address deployer, address create2Deployer)
-        internal
-        returns (System memory s)
-    {
+    function _check(bool ok, string memory what) internal pure {
+        if (!ok) revert DeployMismatch(what);
+    }
+
+    /// @dev Deploys and wires everything from `deployer` (the address whose CREATE nonce is used).
+    function _deploySystem(Config memory c, address deployer) internal returns (System memory s) {
+        _deployGovAndToken(c, s, deployer);
+        _deployHolders(c, s);
+        s.desk = new ChecksDesk(
+            address(s.admin), address(s.poolOwner), address(s.token), address(s.vault), c.compose, c.buyout
+        );
+        _deployGame(c, s);
+        s.sunset = new Sunset(c.collection, address(s.burner), address(s.poolOwner), address(s.game));
+        if (c.seaport != address(0)) s.adapter = new SeaportAdapter(c.seaport, address(s.vault));
+        s.lens = new Lens();
+        s.drawRouter = new DrawRouter(IGameSync(address(s.game)));
+        _wire(c, s);
+    }
+
+    function _deployGovAndToken(Config memory c, System memory s, address deployer) internal {
+        s.council = _deployCouncil(c, deployer);
+        s.admin = new Admin(c.owner, address(s.council));
+        address a = address(s.admin);
+        s.migration = new MigrationAuthority(a);
+        // The coin mints its whole supply to ProtocolLiquidity, which needs the coin's address: predict it.
+        address predictedToken = VM.computeCreateAddress(deployer, VM.getNonce(deployer) + 1);
+        s.liquidity = new ProtocolLiquidity(a, IPoolManager(c.poolManager), predictedToken, c.startTick);
+        address[] memory to = new address[](1);
+        uint256[] memory amounts = new uint256[](1);
+        (to[0], amounts[0]) = (address(s.liquidity), c.supply);
+        s.token = new CollectionToken(
+            c.name, c.symbol, c.coinImage, c.coinDescription, c.supply, to, amounts, a, address(s.liquidity), c.poolManager
+        );
+        _check(address(s.token) == predictedToken, "token address");
+    }
+
+    /// @dev OpenZeppelin TimelockController: the council Safe proposes, the guardian (and the Safe) cancel, anyone
+    ///      executes once the delay has passed, and the timelock administers itself (no deployer power remains).
+    function _deployCouncil(Config memory c, address deployer) internal returns (TimelockController t) {
         address[] memory proposers = new address[](1);
-        proposers[0] = c.council;
-        address[] memory executors = new address[](1); // address(0): anyone executes once the delay has passed
-        s.timelock = new TimelockController(c.delay, proposers, executors, deployer);
-        s.timelock.grantRole(s.timelock.CANCELLER_ROLE(), c.guardian);
-        s.timelock.renounceRole(s.timelock.DEFAULT_ADMIN_ROLE(), deployer);
-
-        address liquidityPredicted = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
-        s.coin = new Coin(c.coinName, c.coinSymbol, c.coinSupply, liquidityPredicted);
-        s.liquidity = new VenueLiquidity(c.poolManager, address(s.coin), c.venueStartTick, address(s.timelock));
-        if (address(s.liquidity) != liquidityPredicted) revert Postflight("liquidity address");
-        s.implementation = new Engine(c.checks, c.editions, c.shapes, ICoinBurn(address(s.coin)));
-        address enginePredicted = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
-        s.controller =
-            new FwaV2Controller(enginePredicted, c.fwaFactory, c.fwaImplementation, c.poolSalt, address(c.checks), address(c.shapes));
-        s.engine = Engine(
-            payable(
-                address(
-                    new ERC1967Proxy(
-                        address(s.implementation),
-                        abi.encodeCall(
-                            Engine.initialize,
-                            (
-                                address(s.timelock),
-                                c.operator,
-                                c.guardian,
-                                IController(address(s.controller)),
-                                c.tierNotional,
-                                c.drawsToCompose,
-                                c.composeBurn,
-                                c.coinPrice,
-                                c.params
-                            )
-                        )
-                    )
-                )
-            )
-        );
-        if (address(s.engine) != enginePredicted) revert Postflight("engine address");
-
-        bytes memory args = abi.encode(
-            c.poolManager, address(s.coin), address(s.liquidity), IFundAcquisitions(address(s.engine)), c.venueFeeBps
-        );
-        (address hookPredicted, bytes32 salt) = HookMiner.find(create2Deployer, HOOK_FLAGS, type(VenueHook).creationCode, args);
-        s.hook = new VenueHook{salt: salt}(
-            c.poolManager, address(s.coin), address(s.liquidity), IFundAcquisitions(address(s.engine)), c.venueFeeBps
-        );
-        if (address(s.hook) != hookPredicted) revert Postflight("hook address");
-        s.liquidity.wire(address(s.hook));
+        proposers[0] = c.councilSafe;
+        address[] memory executors = new address[](1); // address(0): anyone executes
+        t = new TimelockController(c.councilDelay, proposers, executors, deployer); // admin only until renounced below
+        t.grantRole(t.CANCELLER_ROLE(), c.guardian);
+        t.renounceRole(t.DEFAULT_ADMIN_ROLE(), deployer);
     }
 
-    uint160 internal constant HOOK_FLAGS = uint160(
-        Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
-            | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
-    );
-
-    /// @notice Reverts unless the deployed system matches `c` and holds no deployer power.
-    function postflight(System memory s, Config memory c, address deployer) internal view {
-        TimelockController t = s.timelock;
-        if (c.council == address(0) || c.guardian == address(0) || c.operator == address(0)) revert Postflight("roles unset");
-        if (c.council == c.operator || c.guardian == c.operator) revert Postflight("operator holds council or guardian");
-        if (c.delay < 7 days || t.getMinDelay() != c.delay) revert Postflight("delay");
-        if (t.hasRole(t.DEFAULT_ADMIN_ROLE(), deployer)) revert Postflight("deployer is timelock admin");
-        if (!t.hasRole(t.DEFAULT_ADMIN_ROLE(), address(t))) revert Postflight("timelock not self-administered");
-        if (!t.hasRole(t.PROPOSER_ROLE(), c.council) || t.hasRole(t.PROPOSER_ROLE(), c.operator)) revert Postflight("proposer");
-        if (t.hasRole(t.PROPOSER_ROLE(), deployer) || t.hasRole(t.CANCELLER_ROLE(), deployer)) revert Postflight("deployer role");
-        if (!t.hasRole(t.CANCELLER_ROLE(), c.guardian)) revert Postflight("guardian cancel");
-        if (!t.hasRole(t.EXECUTOR_ROLE(), address(0))) revert Postflight("open execution");
-
-        Engine e = s.engine;
-        bytes32 implSlot = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
-        if (address(uint160(uint256(vm.load(address(e), implSlot)))) != address(s.implementation)) revert Postflight("impl");
-        if (e.timelock() != address(t) || e.operator() != c.operator || e.guardian() != c.guardian) revert Postflight("engine roles");
-        if (address(e.controller()) != address(s.controller) || !e.halted()) revert Postflight("engine state");
-        if (address(e.coin()) != address(s.coin) || address(e.checks()) != address(c.checks)) revert Postflight("engine deps");
-        for (uint256 i; i < 8; ++i) {
-            if (e.tierNotional(i) != c.tierNotional[i] || e.coinPrice(i) != c.coinPrice[i]) revert Postflight("schedule");
-        }
-
-        FwaV2Controller k = s.controller;
-        if (k.engine() != address(e) || k.implementation() != c.fwaImplementation) revert Postflight("controller");
-        if (address(k.pool()) != c.fwaFactory.predictPoolAddress(address(k), c.poolSalt)) revert Postflight("pool address");
-        if (c.fwaFactory.implementation() != c.fwaImplementation) revert Postflight("FWA implementation moved");
-
-        if (s.coin.totalSupply() != c.coinSupply || s.coin.balanceOf(address(s.liquidity)) != c.coinSupply) {
-            revert Postflight("coin");
-        }
-        // Never under the existing Black Check project's name, nor the LaunchConfig placeholders (CLAUDE.md invariant 9).
-        bytes32 sym = keccak256(bytes(s.coin.symbol()));
-        bytes32 name = keccak256(bytes(s.coin.name()));
-        if (
-            sym == keccak256("BLACK") || sym == keccak256("BLKCHK") || name == keccak256("Black Check")
-                || name == keccak256("Placeholder Coin")
-        ) revert Postflight("coin name");
-        // The deployer wired the hook once; check it is the honest one before anyone trades.
-        VenueHook h = s.hook;
-        if (h.engine() != IFundAcquisitions(address(e)) || h.launcher() != address(s.liquidity)) revert Postflight("hook wiring");
-        if (h.token() != address(s.coin) || h.feeBps() != c.venueFeeBps) revert Postflight("hook terms");
-        if (s.liquidity.hook() != address(h) || s.liquidity.token() != address(s.coin)) revert Postflight("liquidity wiring");
-        if (s.liquidity.launched() || s.liquidity.deployer() != deployer || s.liquidity.timelock() != address(t)) {
-            revert Postflight("liquidity state");
-        }
-        // Tick 0 (an unset Config field) would open at 1 coin per ETH.
-        if (c.venueStartTick == 0 || s.liquidity.startTick() != c.venueStartTick) revert Postflight("opening price");
+    function _deployHolders(Config memory c, System memory s) internal {
+        address a = address(s.admin);
+        s.burner = new CollectionBurner(
+            a, IPoolManager(c.poolManager), address(s.token), c.cadence, c.tiers, c.milestoneBps
+        );
+        s.vault = new FundingVault(
+            a, c.poolManager, c.collection, c.editions, address(s.burner), address(s.migration), c.bid, c.overflowBps,
+            c.refPrice,
+            c.firstThresholdBps
+        );
+        if (c.layerBurner != address(0)) s.layerTap = address(new LayerTap(c.layerBurner));
+        s.hook = _deployHook(c, s);
+        _deployPacks(c, s);
+        s.poolOwner = _deployPoolOwner(c, s);
     }
+
+    /// @dev A dedicated Draw Packs instance (and its renderer) wrapping the live Shapes token, with the configured
+    ///      minimum. Created from the vendored artifacts (built with their own compiler settings); its admin, the owner,
+    ///      reaches presentation only.
+    function _deployPacks(Config memory c, System memory s) internal {
+        s.packRenderer = VM.deployCode("ShapePackRenderer.sol:ShapePackRenderer", abi.encode(c.shapes));
+        s.packs = VM.deployCode(
+            "ShapePacks.sol:ShapePacks",
+            abi.encode(c.shapes, s.packRenderer, c.owner, c.packsName, c.packsSymbol, c.packMinUnits)
+        );
+    }
+
+    function _deployPoolOwner(Config memory c, System memory s) internal returns (CollectionPoolOwner) {
+        return new CollectionPoolOwner(
+            CollectionPoolOwner.Init({
+                admin: address(s.admin),
+                factory: c.fwaFactory,
+                expectedImplementation: c.fwaImplementation,
+                shapes: c.shapes,
+                packs: s.packs,
+                collection: c.collection,
+                vault: address(s.vault),
+                migrator: address(s.migration),
+                listing: c.listing,
+                schedule: c.schedule,
+                maxInFlight: c.maxInFlight
+            })
+        );
+    }
+
+    function _deployGame(Config memory c, System memory s) internal {
+        s.game = new CollectionGame(
+            CollectionGame.Config({
+                admin: address(s.admin),
+                factory: c.fwaFactory,
+                poolOwner: address(s.poolOwner),
+                vault: address(s.vault),
+                burner: address(s.burner),
+                migrator: address(s.migration),
+                pattern: c.boardPattern,
+                initialBoardSize: c.initialBoardSize,
+                listBatch: c.listBatch,
+                maxPerCall: c.maxPerCall,
+                bookPerCall: c.bookPerCall,
+                markupBps: c.markupBps,
+                opsBps: c.opsBps,
+                keeper: c.keeper,
+                openingAllowance: c.openingAllowance,
+                settings: c.settings
+            })
+        );
+    }
+
+    /// @dev One-shot wiring. Surplus goes to the vault (its share while short of an Ape) and the burner; the burner
+    ///      verifies collection wins from the pool owner's FWA records. The collection, Shapes and Draw Packs are
+    ///      recorded as the protocol's own NFTs, which no owner sweep may move (D62).
+    function _wire(Config memory c, System memory s) internal {
+        s.liquidity.wire(address(s.hook), address(s.poolOwner));
+        s.burner.wire(address(s.hook), address(s.game), address(s.poolOwner));
+        s.vault.wire(address(s.game), address(s.poolOwner), address(s.adapter));
+        s.poolOwner.wire(address(s.game), address(s.desk), _systemContracts(c, s));
+        s.migration.wire(address(s.game), address(s.poolOwner), address(s.vault), address(s.hook), address(s.sunset));
+        address[] memory own = new address[](3);
+        (own[0], own[1], own[2]) = (c.collection, c.shapes, s.packs);
+        s.admin.protect(own);
+    }
+
+    function _deployHook(Config memory c, System memory s) internal returns (CollectionHook hook) {
+        bytes memory initCode = abi.encodePacked(type(CollectionHook).creationCode, _hookArgs(c, s));
+        bytes32 initHash = keccak256(initCode);
+        uint160 flags = uint160(
+            Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+                | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
+        );
+        bytes32 salt;
+        address predicted;
+        for (uint256 i; i < 400_000; ++i) {
+            salt = bytes32(i);
+            // plain keccak, not the cheatcode: the cheatcode in a loop stalls `forge script` on a fork
+            predicted = address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), c.create2Deployer, salt, initHash)))));
+            if (uint160(predicted) & Hooks.ALL_HOOK_MASK == flags && predicted.code.length == 0) break;
+        }
+        address deployed = _create2(salt, initCode, c.create2Deployer, c.create2Direct);
+        _check(deployed == predicted, "hook address");
+        hook = CollectionHook(deployed);
+    }
+
+    /// @dev CREATE2 from the deploying contract itself (tests), else through the deterministic deployment proxy
+    ///      (`create2Deployer`, scripts), which takes `salt ++ initCode`.
+    function _create2(bytes32 salt, bytes memory initCode, address factory, bool direct)
+        internal
+        returns (address deployed)
+    {
+        if (direct) {
+            assembly ("memory-safe") {
+                deployed := create2(0, add(initCode, 0x20), mload(initCode), salt)
+            }
+        } else {
+            (bool ok, bytes memory ret) = factory.call(abi.encodePacked(salt, initCode));
+            _check(ok && ret.length == 20, "create2 proxy");
+            deployed = address(bytes20(ret));
+        }
+    }
+
+    function _hookArgs(Config memory c, System memory s) internal pure returns (bytes memory) {
+        return abi.encode(
+            IPoolManager(c.poolManager),
+            address(s.admin),
+            address(s.token),
+            address(s.liquidity),
+            address(s.migration),
+            address(s.vault),
+            address(s.burner),
+            c.buyFeeBps,
+            c.sellFeeBps,
+            s.layerTap,
+            s.layerTap == address(0) ? 0 : c.layerBps
+        );
+    }
+
+    // ------------------------------------------------------------------ postflight
+
+    /// @notice Reads back every reference, permission and launch value; reverts `DeployMismatch` on any difference.
+    function postflight(Config memory c, System memory s, address deployer) public view {
+        // administration: one Admin naming the owner, read by every governed contract; no deployer power left
+        _check(s.admin.owner() == c.owner && s.admin.pendingOwner() == address(0), "owner");
+        _councilChecks(c, s, deployer);
+        address[8] memory governed = [
+            address(s.liquidity), address(s.burner), address(s.vault), address(s.hook), address(s.poolOwner),
+            address(s.game), address(s.migration), address(s.desk)
+        ];
+        for (uint256 i; i < governed.length; ++i) {
+            IGovernedView g = IGovernedView(governed[i]);
+            _check(g.admin() == address(s.admin), "admin");
+            _check(g.deployer() == address(0), "deployer power left");
+        }
+        // end of life: the MigrationAuthority (72 hours' notice, code pinned) and the sunset successor
+        MigrationAuthority m = s.migration;
+        _check(m.DELAY() == 72 hours && m.pending() == address(0) && !m.started(), "migration state");
+        _check(m.pendingFeeRecipient() == address(0) && m.sunsetter() == address(s.sunset), "migration fee and sunset");
+        _check(address(m.game()) == address(s.game) && address(m.poolOwner()) == address(s.poolOwner), "migration refs");
+        _check(address(m.vault()) == address(s.vault) && address(m.hook()) == address(s.hook), "migration refs 2");
+        _check(s.game.migrator() == address(m) && s.poolOwner.migrator() == address(m), "migrators");
+        _check(s.vault.migrator() == address(m) && s.hook.migrator() == address(m), "migrators 2");
+        _check(s.sunset.burner() == address(s.burner) && s.sunset.collection() == c.collection, "sunset routes");
+        _check(address(s.sunset.poolOwner()) == address(s.poolOwner) && address(s.sunset.game()) == address(s.game), "sunset refs");
+        // coin: fixed supply, all of it in ProtocolLiquidity until launch, none with the deployer
+        // fixed at deploy; only burns (launch dust, buybacks, holders) can lower it afterwards
+        _check(s.token.TOTAL_SUPPLY() == c.supply && s.token.totalSupply() <= c.supply, "supply");
+        _check(
+            s.token.balanceOf(address(s.liquidity)) == c.supply || s.liquidity.launched(), "liquidity holds supply"
+        );
+        _check(s.token.balanceOf(deployer) == 0, "deployer coins");
+        _check(s.token.decimals() == 18, "decimals");
+        // the transfer allowlist starts empty (the owner adds to it afterwards, D84)
+        _check(s.token.restricted() && s.token.allowedList().length == 0, "coin allowlist");
+        // hook: fees, caps, schedule, routes
+        _check(s.hook.token() == address(s.token) && s.hook.launcher() == address(s.liquidity), "hook refs");
+        _check(s.liquidity.hook() == address(s.hook) && s.liquidity.poolOwner() == address(s.poolOwner), "liquidity refs");
+        // trading fees go to the vault. Postflight reads a deployment back (the migration checks above already refuse a
+        // fee proposal or a started migration or sunset), so no other recipient is valid here (D88)
+        _check(s.hook.feeRecipient() == address(s.vault), "fee route");
+        _check(s.hook.buyFeeBps() == c.buyFeeBps && s.hook.sellFeeBps() == c.sellFeeBps, "fees");
+        _check(s.hook.MAX_FEE_BPS() == 1_000, "fee cap");
+        _check(s.hook.exempt(address(s.burner)) && !s.hook.exempt(address(s.liquidity)), "exempt set");
+        _check(s.hook.LAUNCH_FEE_BPS() == 6_900 && s.hook.LAUNCH_DECAY_BPS_PER_MINUTE() == 100, "opening curve");
+        _check(s.hook.launchedAt() == 0 || s.liquidity.launched(), "launch state");
+        _check(s.liquidity.hook() == address(s.hook) && s.liquidity.token() == address(s.token), "liquidity refs");
+        // the configured tick within sense: an opening value of the whole supply between about 1 and 1,000 ETH at 1B
+        // coins (1.0001^tick coins per ETH), so a changed config cannot open the pool at a giveaway price
+        _check(c.startTick >= 138_000 && c.startTick <= 208_000, "opening tick range");
+        _check(s.liquidity.startTick() == c.startTick, "opening tick");
+        _check(
+            address(s.token.admin()) == address(s.admin) && s.token.liquidity() == address(s.liquidity)
+                && s.token.poolManager() == c.poolManager && (s.token.restricted() || s.liquidity.launched()),
+            "coin restriction"
+        );
+        // burner: the surplus sink, its milestone reserve verified from the pool owner's FWA records
+        _check(s.burner.hook() == address(s.hook) && s.burner.token() == address(s.token), "burner refs");
+        _check(address(s.burner.game()) == address(s.game) && s.burner.poolOwner() == address(s.poolOwner), "burner refs 2");
+        _check(s.burner.milestoneBps() == c.milestoneBps, "milestone share");
+        _check(keccak256(abi.encode(s.burner.cadence())) == keccak256(abi.encode(c.cadence)), "buyback cadence");
+        _check(keccak256(abi.encode(s.burner.tiers())) == keccak256(abi.encode(c.tiers)), "buyback tiers");
+        // vault and custody
+        _check(s.vault.collection() == c.collection && s.vault.editions() == c.editions, "vault collection");
+        // the vault can migrate Editions: Checks may burn the Editions it holds
+        _check(c.editions == address(0) || IApprovalView(c.editions).isApprovedForAll(address(s.vault), c.collection), "edition approval");
+        _check(s.vault.poolManager() == c.poolManager && s.vault.burner() == address(s.burner), "vault refs");
+        _check(address(s.vault.game()) == address(s.game) && address(s.vault.poolOwner()) == address(s.poolOwner), "vault wiring");
+        _check(s.vault.adapter() == address(s.adapter), "adapter");
+        if (address(s.adapter) != address(0)) {
+            _check(address(s.adapter.seaport()) == c.seaport && s.adapter.vault() == address(s.vault), "adapter refs");
+        }
+        FundingVault.BidParams memory b = s.vault.bidParams();
+        // the reference price follows every purchase: it matches the configured one until the first
+        _check(
+            (s.vault.lastPrice() == c.refPrice && s.vault.referencePrice() == c.refPrice) || s.vault.acquisitionCount() != 0,
+            "bid reference"
+        );
+        _check(b.thresholdBps == c.bid.thresholdBps && b.maxPrice == c.bid.maxPrice, "bid");
+        _check(b.maxSweepWei == c.bid.maxSweepWei && b.minBlocksBetweenSweeps == c.bid.minBlocksBetweenSweeps, "bid 2");
+        _check(
+            b.ceilingBps == c.bid.ceilingBps && b.slowSweepWei == c.bid.slowSweepWei && b.maxDropBps == c.bid.maxDropBps,
+            "bid ceiling"
+        );
+        _check(s.vault.overflowBps() == c.overflowBps, "fee overflow");
+        // the $LAYER share: the hook pays it to a LayerTap that forwards only to the configured router (D90)
+        _check(
+            s.hook.layerTap() == s.layerTap
+                && (c.layerBurner == address(0)
+                    ? s.layerTap == address(0) && s.hook.layerBps() == 0
+                    : s.hook.layerBps() == c.layerBps && LayerTap(payable(s.layerTap)).router() == c.layerBurner
+                        && LayerTap(payable(s.layerTap)).layerToken() == ILayerBurnerView(c.layerBurner).layerToken()),
+            "layer share"
+        );
+        _check(
+            s.vault.activationThreshold() == c.refPrice * c.firstThresholdBps / 10_000 || s.vault.acquisitionCount() != 0,
+            "activation threshold"
+        );
+        _check(s.poolOwner.collection() == c.collection && s.poolOwner.shapes() == c.shapes, "pool owner collection");
+        _check(s.poolOwner.vault() == address(s.vault) && s.poolOwner.game() == address(s.game), "pool owner wiring");
+        _check(address(s.poolOwner.factory()) == c.fwaFactory, "factory");
+        _check(s.poolOwner.expectedImplementation() == c.fwaImplementation, "fwa implementation");
+        CollectionPoolOwner.ListingParams memory lp = s.poolOwner.listingParams();
+        _check(keccak256(abi.encode(lp)) == keccak256(abi.encode(c.listing)), "listing params");
+        _check(keccak256(abi.encode(s.poolOwner.schedule())) == keccak256(abi.encode(c.schedule)), "schedule");
+        // the Checks desk: wired once into the pool owner, its rules as configured
+        _check(s.poolOwner.desk() == address(s.desk) && address(s.desk.poolOwner()) == address(s.poolOwner), "desk");
+        _check(address(s.desk.coin()) == address(s.token) && s.desk.vault() == address(s.vault), "desk refs");
+        _check(keccak256(abi.encode(s.desk.composeParams())) == keccak256(abi.encode(c.compose)), "compose params");
+        _check(keccak256(abi.encode(s.desk.buyoutParams())) == keccak256(abi.encode(c.buyout)), "buyout params");
+        _check(s.poolOwner.maxInFlight() == c.maxInFlight, "in-flight bound");
+        // game
+        _check(address(s.game.poolOwner()) == address(s.poolOwner) && address(s.game.vault()) == address(s.vault), "game refs");
+        _check(s.game.burner() == address(s.burner) && address(s.game.factory()) == c.fwaFactory, "game routes");
+        // the whole launch board, until activation (the owner may set another pattern later)
+        if (!s.game.activated()) {
+            _check(s.game.patternLength() == c.boardPattern.length, "pattern");
+            for (uint256 i; i < c.boardPattern.length; ++i) {
+                _check(s.game.rowAt(i) == c.boardPattern[i], "pattern row");
+            }
+        }
+        _check(s.game.markupBps() == c.markupBps && s.game.opsBps() == c.opsBps, "pricing");
+        _check(
+            s.game.listBatch() == c.listBatch && s.game.maxPerCall() == c.maxPerCall && s.game.bookPerCall() == c.bookPerCall,
+            "board params"
+        );
+        {
+            (uint256 a0, uint256 a1, uint256 a2, uint256 a3, uint256 a4, uint256 a5, uint256 a6, uint256 a7) =
+                s.game.settings();
+            _check(
+                keccak256(abi.encode(a0, a1, a2, a3, a4, a5, a6, a7)) == keccak256(abi.encode(c.settings)), "game settings"
+            );
+            // the opening keeper allowance, until keepers start drawing on it
+            _check(
+                s.game.keeperAllowance() == c.openingAllowance || s.game.keeperPaid() != 0 || s.game.activated(),
+                "opening allowance"
+            );
+        }
+        CollectionGame.KeeperParams memory kp = s.game.keeperParams();
+        _check(keccak256(abi.encode(kp)) == keccak256(abi.encode(c.keeper)), "keeper params");
+        // the player entry point serves this game only
+        _check(address(s.drawRouter.game()) == address(s.game), "draw router game");
+        // the dedicated Draw Packs instance: wraps the live Shapes, the configured minimum, presentation admin only
+        _check(s.poolOwner.packs() == s.packs && IPacksView(s.packs).shapes() == c.shapes, "packs");
+        _check(IPacksView(s.packs).MIN_PACK_VALUE() == c.packMinUnits * IShapesUnit(c.shapes).unit(), "pack minimum");
+        _check(IPacksView(s.packs).admin() == c.owner, "packs admin");
+        _check(s.game.boardSize() == c.initialBoardSize || s.game.activated(), "board");
+        // FWA pool, once created: owned by the pool owner forever, which is also its purchase operator, and able to
+        // deliver every prize kind from the pool owner's custody
+        address fwaPool = address(s.poolOwner.pool());
+        if (fwaPool != address(0)) {
+            _check(IOwnedView(fwaPool).owner() == address(s.poolOwner), "fwa pool owner");
+            _check(IOwnedView(fwaPool).purchaseOperator() == address(s.poolOwner), "fwa purchase operator");
+            address po = address(s.poolOwner);
+            _check(
+                IApprovalView(c.collection).isApprovedForAll(po, fwaPool) && IApprovalView(c.shapes).isApprovedForAll(po, fwaPool)
+                    && IApprovalView(s.packs).isApprovedForAll(po, fwaPool),
+                "fwa approvals"
+            );
+        }
+        _postflightIdentity(c, s);
+        // the protocol's own NFTs: never swept, and the list is closed
+        _check(s.admin.isProtected(c.collection) && s.admin.isProtected(c.shapes), "protected collection");
+        _check(s.admin.isProtected(s.packs) && s.admin.deployer() == address(0), "protected packs");
+    }
+
+    /// @dev The council timelock (D012): its delay, roles and independence from the owner and the deployer.
+    function _councilChecks(Config memory c, System memory s, address deployer) internal view {
+        TimelockController t = s.council;
+        _check(s.admin.council() == address(t) && c.councilSafe != c.owner && c.guardian != c.owner, "council");
+        _check(t.getMinDelay() == c.councilDelay && c.councilDelay >= 7 days, "council delay");
+        _check(t.hasRole(t.PROPOSER_ROLE(), c.councilSafe) && !t.hasRole(t.PROPOSER_ROLE(), c.owner), "council proposer");
+        _check(t.hasRole(t.CANCELLER_ROLE(), c.guardian) && t.hasRole(t.EXECUTOR_ROLE(), address(0)), "council roles");
+        _check(
+            !t.hasRole(t.DEFAULT_ADMIN_ROLE(), deployer) && !t.hasRole(t.DEFAULT_ADMIN_ROLE(), c.owner)
+                && t.hasRole(t.DEFAULT_ADMIN_ROLE(), address(t)),
+            "council admin"
+        );
+    }
+
+    /// @dev Names, presentation and the pool owner's purchaser exclusions (split out of `postflight` for stack depth).
+    function _postflightIdentity(Config memory c, System memory s) internal view {
+        _check(_eq(s.token.name(), c.name) && _eq(s.token.symbol(), c.symbol), "coin identity");
+        // invariant 9: never the existing Black Check project's name or ticker, nor the unresolved placeholders
+        _check(
+            !_eq(c.symbol, "BLACK") && !_eq(c.symbol, "BLKCHK") && !_eq(c.name, "Black Check")
+                && !_eq(c.name, "Placeholder Coin") && bytes(c.name).length != 0 && bytes(c.symbol).length != 0,
+            "coin name"
+        );
+        _check(
+            _eq(s.token.imageUrl(), c.coinImage) && _eq(s.token.metadata(), c.coinDescription)
+                && s.token.metadataRenderer() == address(0),
+            "coin metadata"
+        );
+        IPacksView p = IPacksView(s.packs);
+        _check(_eq(p.name(), c.packsName) && _eq(p.symbol(), c.packsSymbol), "packs identity");
+        _check(p.renderer() == s.packRenderer && IPacksView(s.packRenderer).shapes() == c.shapes, "packs renderer");
+        address[] memory sys = _systemContracts(c, s);
+        for (uint256 i; i < sys.length; ++i) {
+            _check(s.poolOwner.isSystem(sys[i]), "system purchaser");
+        }
+    }
+
+    /// @dev Every contract the deploy creates that is not already refused as a draw's purchaser (round 4 G3), the
+    ///      LayerTap included when there is one.
+    ///      Checks Editions too: an Edition contract holding a won Check could never pass it on.
+    function _systemContracts(Config memory c, System memory s) internal pure returns (address[] memory sys) {
+        sys = new address[](s.layerTap == address(0) ? 12 : 13);
+        (sys[0], sys[1], sys[2], sys[3], sys[4]) =
+            (address(s.burner), address(s.hook), address(s.liquidity), address(s.token), address(s.admin));
+        (sys[5], sys[6], sys[7], sys[8], sys[9]) =
+            (address(s.sunset), address(s.adapter), address(s.lens), address(s.drawRouter), s.packRenderer);
+        (sys[10], sys[11]) = (c.editions, address(s.council));
+        if (s.layerTap != address(0)) sys[12] = s.layerTap;
+    }
+
+    function _eq(string memory a, string memory b) private pure returns (bool) {
+        return keccak256(bytes(a)) == keccak256(bytes(b));
+    }
+}
+
+interface ILayerBurnerView {
+    function layerToken() external view returns (address);
+}
+
+interface IApprovalView {
+    function isApprovedForAll(address owner, address operator) external view returns (bool);
+}
+
+interface IOwnedView {
+    function owner() external view returns (address);
+    function purchaseOperator() external view returns (address);
+}
+
+interface IGovernedView {
+    function admin() external view returns (address);
+    function deployer() external view returns (address);
 }
