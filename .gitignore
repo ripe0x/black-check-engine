@@ -22,3 +22,6 @@ coverage/
 .DS_Store
 out-fast/
 cache-fast/
+# written by every test run (Gas, GasPrizes, ManyApes, Throughput); recorded receipts are committed deliberately
+docs/receipts/*.json
+docs/receipts/throughput/*.json
