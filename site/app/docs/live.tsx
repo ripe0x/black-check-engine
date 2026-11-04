@@ -85,7 +85,7 @@ const CONTRACTS: [string, keyof typeof deployment][] = [
   ["Game ledger", "game"], ["FWA pool owner and NFT custody", "poolOwner"], ["Funding vault (trading fees, the live bid)", "vault"],
   ["Burner (buy-and-burn)", "burner"], [`${collectionMeta.ticker} coin`, "token"], ["Uniswap v4 hook", "hook"],
   ["Protocol liquidity (no withdrawal)", "liquidity"], ["Migration authority (72-hour notice)", "migration"],
-  ["Sunset (auctions every Ape, burns everything)", "sunset"], ["Seaport adapter", "adapter"], ["Admin (owner of every contract)", "admin"],
+  ["Sunset (auctions every Check, burns everything)", "sunset"], ["Seaport adapter", "adapter"], ["Admin (owner and council)", "admin"], ["Checks desk", "desk"], ["Council timelock", "council"],
   ["Owner", "owner"], ["Draw router (no privileges)", "drawRouter"], ["Lens (read only)", "lens"],
 ];
 
@@ -124,12 +124,13 @@ function Changes() {
   );
 }
 
-/** The listing rule's live settings, and every Ape listed with its notional, what the rule says it is due, and its odds. */
+/** The listing rule's live settings (D003, D005), and every Check listed with its notional, survived draws, what the
+ *  rule says it is due, and its odds. */
 export const ApesLive = () => live(<Apes />);
 function Apes() {
   const { data: prizes } = usePrizes();
   const { data: q } = useQuote();
-  const { data: credit } = useReadContract({ address: deployment.poolOwner, abi: poolOwnerAbi, functionName: "creditPerApe" });
+  const { data: schedule } = useReadContract({ address: deployment.poolOwner, abi: poolOwnerAbi, functionName: "schedule" });
   const { data: lp } = useReadContract({ address: deployment.poolOwner, abi: poolOwnerAbi, functionName: "listingParams" });
   const { data: n } = useReadContract({ address: deployment.poolOwner, abi: poolOwnerAbi, functionName: "listedCount" });
   const ids = useReadContracts({ contracts: Array.from({ length: Number(n ?? 0n) }, (_, i) => ({ address: deployment.poolOwner, abi: poolOwnerAbi, functionName: "listedAt", args: [BigInt(i)] } as const)) });
@@ -137,27 +138,28 @@ function Apes() {
   const recs = useReadContracts({ contracts: listingIds.flatMap((id) => [
     { address: deployment.poolOwner, abi: poolOwnerAbi, functionName: "cListings", args: [id] } as const,
     { address: deployment.poolOwner, abi: poolOwnerAbi, functionName: "notionalOf", args: [id] } as const,
+    { address: deployment.poolOwner, abi: poolOwnerAbi, functionName: "survived", args: [id] } as const,
   ]) });
   const probability = new Map((prizes ?? []).filter((p) => p.collection).map((p) => [p.listingId.toString(), p.probabilityE18]));
   return (
     <>
       <h2>The rule now</h2>
       <div className="stats">
-        <Stat label="Opens at" value={lp ? `${Number(lp.startBps) / 100}% of its price, at least ${eth(lp.minNotionalWei)}` : "–"} />
-        <Stat label="Falls by" value={lp ? `${Number(lp.decayBps) / 10_000} ETH per ETH credited` : "–"} />
+        <Stat label="Opens at" value={schedule ? `its tier's price (an 80: ${eth(schedule[0])})` : "–"} />
+        <Stat label="Falls by" value={lp ? `${Number(lp.decayBps) / 100}% of its price per draw it survives` : "–"} />
         <Stat label="And by" value={lp ? (lp.dailyDecayBps ? `${Number(lp.dailyDecayBps) / 100}% of its price a day` : "nothing over time (off)") : "–"} />
-        <Stat label="Never below" value={lp ? eth(lp.minNotionalWei) : "–"} />
+        <Stat label="Never below" value={lp ? `${Number(lp.floorBps) / 100}% of its price` : "–"} />
         <Stat label="Exposure / target" value={q ? `${bps(q.exposureBps)} / ${bps(q.targetBps)}` : "–"} />
-        <Stat label={`Gameplay credited to each ${collectionMeta.short}`} value={eth(credit)} />
       </div>
       <h2>{collectionMeta.short}s listed</h2>
       <table>
-        <thead><tr><th>{collectionMeta.short}</th><th>Listed at</th><th>Due by the rule</th><th>Chance per draw</th></tr></thead>
+        <thead><tr><th>{collectionMeta.short}</th><th>Listed at</th><th>Survived</th><th>Due by the rule</th><th>Chance per draw</th></tr></thead>
         <tbody>{listingIds.map((id, i) => {
-          const v = recs.data?.[2 * i]?.result as readonly [bigint, bigint, bigint, boolean, bigint] | undefined;
-          const due = recs.data?.[2 * i + 1]?.result as bigint | undefined;
+          const v = recs.data?.[3 * i]?.result as readonly [bigint, bigint, bigint, bigint, boolean, bigint] | undefined;
+          const due = recs.data?.[3 * i + 1]?.result as bigint | undefined;
+          const survived = recs.data?.[3 * i + 2]?.result as bigint | undefined;
           if (!v) return null;
-          return <tr key={id.toString()}><td>#{v[0].toString()}</td><td>{eth(v[1])}</td><td>{due !== undefined && due < v[1] ? `${eth(due)} (repriced at the next upkeep)` : eth(due)}</td><td>{odds(probability.get(id.toString()))}</td></tr>;
+          return <tr key={id.toString()}><td>#{v[0].toString()}</td><td>{eth(v[1])}</td><td>{survived?.toString() ?? "–"}</td><td>{due !== undefined && due !== v[1] ? `${eth(due)} (repriced at the next upkeep)` : eth(due)}</td><td>{odds(probability.get(id.toString()))}</td></tr>;
         })}</tbody>
       </table>
     </>

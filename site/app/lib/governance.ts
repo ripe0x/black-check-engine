@@ -17,7 +17,7 @@ const adminEvents: Record<string, string> = {
   BoardParamsSet: "Changed the replacement batch and the prizes listed per call",
   KeeperParamsSet: "Changed keeper pay (gas price cap, overhead, flat fee, delay after players' upkeep)",
   ParamsSet: "Changed the buyback pace and price limits",
-  ListingParamsSet: "Changed how Apes open, decay and fit the board (exposure target)",
+  ListingParamsSet: "The council changed how Checks decay and fit the board (exposure target)",
   MaxInFlightSet: "Changed the in-flight request limit",
   FeesSet: "Changed the trading fee",
   FeeRecipientSet: "Trading fees now go to a new recipient",
@@ -31,7 +31,7 @@ const adminEvents: Record<string, string> = {
   Executed: "Executed a migration",
   FeeRecipientProposed: "Proposed a new trading-fee recipient (executable 72 hours later)",
   FeeRecipientExecuted: "Executed a new trading-fee recipient",
-  Sunset: "Ended the game into the sunset: Apes auctioned, every wei to coin buybacks",
+  Sunset: "Ended the game into the sunset: Checks auctioned, every wei to coin buybacks",
   OwnershipTransferStarted: "Started an ownership transfer",
   OwnershipTransferred: "Transferred (or renounced) ownership",
 };

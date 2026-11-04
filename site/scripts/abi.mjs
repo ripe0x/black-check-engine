@@ -1,7 +1,8 @@
 // Generates app/lib/abi.generated.ts from the Foundry artifacts (run `forge build` at the repository root first).
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-const out = (p) => fileURLToPath(new URL(`../../out/${p}`, import.meta.url));
+// FOUNDRY_OUT: the artifacts directory (default out; the ABIs are the same under every profile)
+const out = (p) => fileURLToPath(new URL(`../../${process.env.FOUNDRY_OUT || "out"}/${p}`, import.meta.url));
 const pick = {
   lensAbi: "Lens.sol/Lens.json",
   drawRouterAbi: "DrawRouter.sol/DrawRouter.json",

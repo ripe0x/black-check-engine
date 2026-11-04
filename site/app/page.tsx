@@ -79,7 +79,7 @@ function Shell({ field, side, children }: { field: ReactNode; side: ReactNode; c
         <div className="home-col">
           <header className="intro">
             <h1>The coin builds the pool. The pool feeds the coin.</h1>
-            <p className="lede">Trading fees from $APEBALL acquire Bored Apes for an FWA custom pool. Pool revenue goes to buy and burn the coin.</p>
+            <p className="lede">Trading fees from {collectionMeta.ticker} acquire Checks for an FWA custom pool. Checks that survive draws get easier to win and can be composed. Pool revenue goes to buy and burn the coin.</p>
           </header>
           <aside className="home-side" aria-label={`Trade ${collectionMeta.ticker}`}><CoinLine />{side}</aside>
         </div>

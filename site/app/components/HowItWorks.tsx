@@ -35,7 +35,7 @@ export function HowItWorks() {
     <section id="how" className="how" aria-labelledby="how-title">
       <div className="how-intro">
         <h2>Building the pool</h2>
-        <p className="lede">Trading fees from {sym} acquire the first Bored Ape and fund an initial board of ETH backed Shapes and Packs. Together, they form an FWA custom pool where anyone can purchase a randomly selected NFT with ETH.</p>
+        <p className="lede">Trading fees from {sym} acquire the first Check and fund an initial board of ETH backed Shapes and Packs. Together, they form an FWA custom pool where anyone can purchase a randomly selected NFT with ETH.</p>
       </div>
       <h2 id="how-title">The cycle</h2>
       <div className="how-grid">

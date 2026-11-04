@@ -19,7 +19,7 @@ export const chainOf = (chainId: number) => (chainId === anvil.id ? anvil : chai
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim();
 const connectors = connectorsForWallets(
   [{ groupName: "Wallets", wallets: projectId ? [rainbowWallet, metaMaskWallet, coinbaseWallet, walletConnectWallet, injectedWallet] : [injectedWallet] }],
-  { appName: "ApeBall", projectId: projectId || "unset" },
+  { appName: "Checks Survival", projectId: projectId || "unset" },
 );
 
 export function buildConfig(chainId: number) {

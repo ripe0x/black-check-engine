@@ -68,7 +68,7 @@ export function BurnPot() {
   const inWindow = tiers && lastExit && now !== undefined && now <= Number(lastExit) + Number(tiers.exitWindow);
   const bps = !tiers ? undefined : inWindow ? 10_000n : tiers.firstExitBps;
   return (
-    <div className="pot" title="All game surplus sent to buybacks waits here. Pulling an Ape releases it to buy and burn the coin.">
+    <div className="pot" title="All game surplus sent to buybacks waits here. Winning a Check releases it to buy and burn the coin.">
       <span className="pot-head">{ape.toUpperCase()} BURN POT</span>
       <b>{e3(pot)} ETH</b>
       <span className="pot-sub">{bps === undefined ? `Pull an ${ape} to set it off` : `Pull an ${ape}: ${e3((pot * bps) / 10_000n)} ETH buys and burns ${sym}`}</span>

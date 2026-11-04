@@ -384,7 +384,7 @@ export function DrawFlow({ d, count, setCount, dome, apes }: { d: DrawApi; count
     for (const [k, a] of todo.entries()) {
       setView("redeeming");
       setMsg({ title: `One-time setup · step ${k + 1} of ${steps}`,
-        sub: `Allow ApeBall to redeem your ${a.toLowerCase() === deployment.packs.toLowerCase() ? "Shapes Packs" : "Shapes"} when you pay with your winnings.` });
+        sub: `Allow ${collectionMeta.game} to redeem your ${a.toLowerCase() === deployment.packs.toLowerCase() ? "Shapes Packs" : "Shapes"} when you pay with your winnings.` });
       try {
         const r = await client.waitForTransactionReceipt({ hash: await sendTransactionAsync({ chainId: deployment.chainId, ...approve(a) }) });
         if (r.status !== "success") throw new Error("reverted");
